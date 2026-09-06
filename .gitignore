@@ -1,0 +1,7 @@
+.derived/
+*.xcodeproj
+xcuserdata/
+.DS_Store
+.build/
+Packages/LevmiCore/.build/
+Packages/LevmiCore/.swiftpm/
