@@ -1,0 +1,77 @@
+[
+  {
+    "id": "pruef-falle",
+    "name": "Die Prüf-Falle",
+    "note": "Weiter prüfen statt entscheiden. Fühlt sich sorgfältig an und verlängert nur die Lagerzeit."
+  },
+  {
+    "id": "infos-fehlen-illusion",
+    "name": "Die Infos-fehlen-Illusion",
+    "note": "Die Entscheidung wird vertagt, weil angeblich Informationen fehlen. Meist fehlt aber die Begeisterung, nicht die Information."
+  },
+  {
+    "id": "sortier-trost",
+    "name": "Der Sortier-Trost",
+    "note": "Ordnen statt wegnehmen. Eine gute Reihenfolge ändert nichts an der Menge."
+  },
+  {
+    "id": "gerechtigkeits-falle",
+    "name": "Die Gerechtigkeits-Falle",
+    "note": "Jedem Vorhaben gleich viel geben. Das ist fair zu den Aufgaben und unfair zur eigenen Zeit."
+  },
+  {
+    "id": "begruendungs-schuld",
+    "name": "Die Begründungs-Schuld",
+    "note": "Das Nein wird mit einer langen Begründung entschuldigt und damit wieder verhandelbar."
+  },
+  {
+    "id": "aussitz-reflex",
+    "name": "Der Aussitz-Reflex",
+    "note": "Nicht antworten und hoffen, dass sich die Sache erledigt. Sie bleibt im Kopf und kostet weiter."
+  },
+  {
+    "id": "lauwarm-lager",
+    "name": "Das Lauwarm-Lager",
+    "note": "Alles offen halten, nichts entscheiden. Offen lassen ist eine Entscheidung für Lagerkosten."
+  },
+  {
+    "id": "luecken-reflex",
+    "name": "Der Lücken-Reflex",
+    "note": "Der Blick geht automatisch zum Schwachen. Der billigere Hebel liegt fast immer beim Starken."
+  },
+  {
+    "id": "mehr-vom-gleichen",
+    "name": "Mehr vom Gleichen",
+    "note": "Die Menge wird erhöht, statt die Verteilung zu nutzen. Doppelt so viel Aufwand für dasselbe Ergebnis."
+  },
+  {
+    "id": "system-flucht",
+    "name": "Die System-Flucht",
+    "note": "Ein besseres Werkzeug soll die fehlende Auswahl ersetzen. Es verwaltet die unwichtigen Aufgaben nur schöner."
+  },
+  {
+    "id": "mengen-irrtum",
+    "name": "Der Mengen-Irrtum",
+    "note": "Fehlender Fortschritt wird als zu geringe Menge gedeutet. Mehr von dem, was nicht wirkt, wirkt nicht."
+  },
+  {
+    "id": "kapazitaets-reflex",
+    "name": "Der Kapazitäts-Reflex",
+    "note": "Mehr Leute, mehr Budget, mehr Zeit — überall außer an der Engstelle erzeugt das Stau oder Leerlauf."
+  },
+  {
+    "id": "gleichschritt-irrtum",
+    "name": "Der Gleichschritt-Irrtum",
+    "note": "Gleichmäßige Auslastung wird mit Leistung verwechselt. Das Ziel ist Durchsatz, nicht Takt."
+  },
+  {
+    "id": "falsche-baustelle",
+    "name": "Die falsche Baustelle",
+    "note": "Verbessert wird, was ohnehin funktioniert, während die begrenzende Stelle unberührt bleibt."
+  },
+  {
+    "id": "rueckfall-fehlschluss",
+    "name": "Der Rückfall-Fehlschluss",
+    "note": "Ein neues Stocken gilt als Beweis, dass die alte Lösung falsch war. Tatsächlich ist die Engstelle gewandert."
+  }
+]

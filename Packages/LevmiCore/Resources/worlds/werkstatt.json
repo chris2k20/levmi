@@ -1,0 +1,295 @@
+{
+  "id": "werkstatt",
+  "title": "Die Werkstatt",
+  "schemaVersion": 1,
+  "world": "werkstatt",
+  "principles": [
+    {
+      "id": "schnitt",
+      "schemaVersion": 1,
+      "world": "werkstatt",
+      "orderInWorld": 1,
+      "title": "Der Schnitt",
+      "subtitle": "Glühend oder weg",
+      "core": "Wenn eine Sache dich nicht sofort begeistert, ist sie ein Nein.",
+      "expandedCore": "Die meisten Entscheidungen fallen nicht zwischen Ja und Nein, sondern versanden im Lauwarmen. Lauwarmes fühlt sich nach Sorgfalt an, ist aber Lagerhaltung: es belegt Kopf, Kalender und Energie, ohne je zu einem Ergebnis zu führen. Wer das Graue konsequent wegkippt, gewinnt nicht Zeit für mehr Graues, sondern Platz für das eine Glühende.",
+      "metaphor": {
+        "imageLine": "Drei Ablagen: eine glüht, eine ist kalt, die graue dazwischen stellt den ganzen Raum voll.",
+        "sceneID": "scene.werkbank",
+        "primaryObject": "Die graue Ablage",
+        "interaction": "kippen",
+        "successState": "Die graue Ablage ist leer, der Raum wird hell und begehbar, die glühende Ablage rückt in die Mitte."
+      },
+      "recognition": [
+        {
+          "id": "schnitt.q1",
+          "situation": "Ein Bekannter fragt dich für ein Projekt an. Du denkst: „Interessant, könnte man mal machen.“",
+          "prompt": "Was ist das?",
+          "options": [
+            { "id": "a", "text": "Ein Ja mit Bedenkzeit — du prüfst es in Ruhe.", "isCorrect": false, "fallacyID": "pruef-falle", "feedback": "Prüfen fühlt sich sorgfältig an. Tatsächlich verlängerst du nur die Lagerzeit." },
+            { "id": "b", "text": "Ein Nein.", "isCorrect": true, "fallacyID": null, "feedback": "Richtig. Was dich nicht sofort packt, packt dich auch in drei Wochen nicht." },
+            { "id": "c", "text": "Ein Vielleicht — du entscheidest, wenn du mehr Infos hast.", "isCorrect": false, "fallacyID": "infos-fehlen-illusion", "feedback": "Die fehlende Info ist selten das Problem. Die fehlende Begeisterung ist die Antwort." }
+          ]
+        },
+        {
+          "id": "schnitt.q2",
+          "situation": "Du hast elf offene Vorhaben. Zwei begeistern dich, neun sind „eigentlich sinnvoll“.",
+          "prompt": "Was bringt dich am schnellsten weiter?",
+          "options": [
+            { "id": "a", "text": "Die neun sinnvollen in eine gute Reihenfolge bringen.", "isCorrect": false, "fallacyID": "sortier-trost", "feedback": "Sortieren ist keine Entscheidung. Elf sortierte Vorhaben sind immer noch elf." },
+            { "id": "b", "text": "Die neun beenden oder abgeben — heute, sichtbar.", "isCorrect": true, "fallacyID": null, "feedback": "Ja. Der Gewinn liegt im Wegnehmen, nicht im Ordnen." },
+            { "id": "c", "text": "Jedem Vorhaben pro Woche eine Stunde geben.", "isCorrect": false, "fallacyID": "gerechtigkeits-falle", "feedback": "Gleiche Verteilung ist fair zu Aufgaben und unfair zu dir." }
+          ]
+        },
+        {
+          "id": "schnitt.q3",
+          "situation": "Du sagst zu einer Anfrage ab. Dein erster Impuls: eine lange Begründung schreiben.",
+          "prompt": "Was ist besser?",
+          "options": [
+            { "id": "a", "text": "Ausführlich begründen, damit niemand gekränkt ist.", "isCorrect": false, "fallacyID": "begruendungs-schuld", "feedback": "Eine lange Begründung lädt zur Verhandlung ein — und macht aus dem Nein wieder ein Vielleicht." },
+            { "id": "b", "text": "Ein Satz, freundlich, ohne Tür.", "isCorrect": true, "fallacyID": null, "feedback": "Genau. Klar und kurz ist respektvoller als vage und lang." },
+            { "id": "c", "text": "Gar nicht antworten, das erledigt sich.", "isCorrect": false, "fallacyID": "aussitz-reflex", "feedback": "Nicht antworten ist kein Nein — die Sache bleibt in deinem Kopf." }
+          ]
+        }
+      ],
+      "explainPrompt": "Erklär in eigenen Worten, warum lauwarme Sachen teurer sind als abgelehnte. Nimm ein Beispiel aus deiner letzten Woche.",
+      "drill": {
+        "id": "schnitt.drill",
+        "title": "Kipp die graue Ablage",
+        "instruction": "Schreib die fünf offenen Dinge auf, die seit über zwei Wochen in deinem Kopf hängen. Markiere jedes mit GLÜHEND oder GRAU. Sag heute zu genau einem GRAUEN ab — eine Nachricht, ein Satz, keine Begründung.",
+        "durationMinutes": 7,
+        "inputKind": { "liste": { "min": 5 } },
+        "minEvidenceChars": 80,
+        "windowHours": 24
+      },
+      "selfCheck": {
+        "question": "Hast du die Absage wirklich abgeschickt?",
+        "passCriteria": [
+          "Die Liste enthält mindestens 5 Einträge.",
+          "Mindestens ein Eintrag ist als GRAU markiert.",
+          "Die Absage ist als abgeschickt bestätigt (Name oder Kanal genannt)."
+        ]
+      },
+      "antiPattern": {
+        "id": "lauwarm-lager",
+        "name": "Das Lauwarm-Lager",
+        "tellTale": "„Ich lass es erst mal offen, man weiß ja nie.“",
+        "counterMove": "Offen lassen ist eine Entscheidung — für Lagerkosten. Entscheide heute, in einem Satz."
+      },
+      "teachTask": {
+        "prompt": "Erklär jemandem in 60 Sekunden, warum ein schnelles Nein freundlicher ist als ein langes Vielleicht.",
+        "maxSeconds": 60,
+        "requiredElements": ["eigenes Beispiel", "keine Fachwörter"]
+      },
+      "prerequisites": [],
+      "synergies": [
+        { "partner": "ein-prozent-spur", "chordName": "Klarer Tag", "effect": "Erst wegnehmen, dann das eine Prozent finden — sonst suchst du im vollen Raum.", "bonus": 1.25 },
+        { "partner": "engstelle", "chordName": "Klarer Tag", "effect": "Weniger Vorhaben heißt: die Engstelle ist überhaupt sichtbar.", "bonus": 1.25 }
+      ],
+      "tensions": ["blinder-schwimmer"],
+      "difficulty": 1,
+      "estimatedMinutes": 9,
+      "lifeDomains": ["zeit", "klarheit"],
+      "attribution": {
+        "originName": "Derek Sivers",
+        "originKind": "person",
+        "originYear": 2009,
+        "note": "Sivers hat die Entweder-begeistert-oder-nein-Regel als Entscheidungsfilter bekannt gemacht; das Grundmuster ist älter und findet sich in jeder Portfolio-Logik.",
+        "furtherReading": "sive.rs"
+      },
+      "tags": ["entscheiden", "fokus", "zeit"]
+    },
+
+    {
+      "id": "ein-prozent-spur",
+      "schemaVersion": 1,
+      "world": "werkstatt",
+      "orderInWorld": 2,
+      "title": "Die Ein-Prozent-Spur",
+      "subtitle": "Eine Kiste leuchtet",
+      "core": "Wenn 20 Prozent deiner Handlungen 80 Prozent bringen, bringt 1 Prozent über die Hälfte.",
+      "expandedCore": "Die 80/20-Verteilung ist kein Spruch, sondern eine Verteilung, die sich selbst wiederholt: Wende sie auf ihre eigene Spitze an, und aus 20/80 wird 4/64 und dann 1/51. Praktisch heißt das: In fast jeder Liste, die du führst, steckt eine einzige Zeile, die mehr wiegt als der ganze Rest. Die Arbeit besteht nicht darin, mehr zu tun, sondern diese Zeile zu finden und alles andere leiser zu drehen.",
+      "metaphor": {
+        "imageLine": "Ein dunkler Hangar voller gleicher Kisten — der Lichtkegel schrumpft, bis nur eine von innen leuchtet.",
+        "sceneID": "scene.hangar",
+        "primaryObject": "Der Lichtring",
+        "interaction": "drehen",
+        "successState": "Der Kegel steht auf einer einzigen Kiste, die von innen glüht; der Rest der Halle bleibt dunkel und ruhig."
+      },
+      "recognition": [
+        {
+          "id": "spur.q1",
+          "situation": "Du hast 40 Kunden. Sechs machen 80 Prozent des Umsatzes. Der Umsatz stagniert.",
+          "prompt": "Was ist der stärkste nächste Zug?",
+          "options": [
+            { "id": "a", "text": "Die 34 schwachen reaktivieren — da liegt ungenutztes Potenzial.", "isCorrect": false, "fallacyID": "luecken-reflex", "feedback": "Der Blick geht automatisch zum Schwachen. Der Hebel liegt beim Starken." },
+            { "id": "b", "text": "Herausfinden, was die sechs gemeinsam haben, und gezielt mehr davon holen.", "isCorrect": true, "fallacyID": null, "feedback": "Richtig. Die Spitze ist deine Bauanleitung für die nächste Runde." },
+            { "id": "c", "text": "Die Kundenzahl verdoppeln.", "isCorrect": false, "fallacyID": "mehr-vom-gleichen", "feedback": "Verdoppelt auch die anstrengenden Kunden. Doppelt so viel Lärm für dasselbe Ergebnis." }
+          ]
+        },
+        {
+          "id": "spur.q2",
+          "situation": "Deine Woche hat 30 erledigte Aufgaben. Am Freitag fühlt sich nichts nach Fortschritt an.",
+          "prompt": "Was fehlt?",
+          "options": [
+            { "id": "a", "text": "Mehr Struktur — ein besseres Aufgabensystem.", "isCorrect": false, "fallacyID": "system-flucht", "feedback": "Ein besseres System verwaltet 30 unwichtige Aufgaben schöner." },
+            { "id": "b", "text": "Eine ehrliche Antwort, welche eine Aufgabe das Ergebnis bewegt hätte.", "isCorrect": true, "fallacyID": null, "feedback": "Ja. Fortschritt entsteht an einer Stelle, nicht auf dreißig." },
+            { "id": "c", "text": "Mehr Zeit — 30 waren zu wenig.", "isCorrect": false, "fallacyID": "mengen-irrtum", "feedback": "Mehr von dem, was nicht wirkt, wirkt nicht mehr." }
+          ]
+        },
+        {
+          "id": "spur.q3",
+          "situation": "Zwei deiner zwölf Inhalte bringen fast alle Anfragen.",
+          "prompt": "Was tust du als Nächstes?",
+          "options": [
+            { "id": "a", "text": "Die zehn schwachen überarbeiten.", "isCorrect": false, "fallacyID": "luecken-reflex", "feedback": "Reparieren ist teuer und ändert die Verteilung nicht." },
+            { "id": "b", "text": "Die zwei starken in fünf Varianten wiederverwenden und breiter ausspielen.", "isCorrect": true, "fallacyID": null, "feedback": "Genau. Das Starke verdoppeln ist billiger als das Schwache heilen." },
+            { "id": "c", "text": "Zwölf neue produzieren, um mehr Daten zu haben.", "isCorrect": false, "fallacyID": "mengen-irrtum", "feedback": "Du hast die Daten schon. Sie zeigen auf zwei." }
+          ]
+        }
+      ],
+      "explainPrompt": "Erklär in eigenen Worten, warum „mehr tun“ und „das Richtige tun“ fast nie dasselbe sind. Nimm eine Zahl aus deinem eigenen Alltag.",
+      "drill": {
+        "id": "spur.drill",
+        "title": "Streich bis eins übrig ist",
+        "instruction": "Liste alles, was du letzte Woche gearbeitet hast. Streiche, bis drei Zeilen übrig sind. Streiche weiter, bis eine übrig ist. Trag diese eine für morgen als ersten Termin ein.",
+        "durationMinutes": 8,
+        "inputKind": { "liste": { "min": 6 } },
+        "minEvidenceChars": 60,
+        "windowHours": 24
+      },
+      "selfCheck": {
+        "question": "Steht genau eine Zeile als morgiger Ersttermin fest?",
+        "passCriteria": [
+          "Die Ausgangsliste hat mindestens 6 Einträge.",
+          "Genau ein Eintrag ist als Ein-Prozent-Spur markiert.",
+          "Für diesen Eintrag ist eine Uhrzeit oder ein Tag hinterlegt."
+        ]
+      },
+      "antiPattern": {
+        "id": "luecken-reflex",
+        "name": "Der Lücken-Reflex",
+        "tellTale": "„Da ist noch Potenzial, das müssen wir heben.“",
+        "counterMove": "Frag zuerst, was schon funktioniert, und verdopple das. Lücken sind fast nie der günstigste Hebel."
+      },
+      "teachTask": {
+        "prompt": "Erklär jemandem in 60 Sekunden, warum aus 20/80 ein 1/51 wird — und was das für seinen Montag heißt.",
+        "maxSeconds": 60,
+        "requiredElements": ["eigenes Beispiel", "eine Zahl"]
+      },
+      "prerequisites": [],
+      "synergies": [
+        { "partner": "schnitt", "chordName": "Klarer Tag", "effect": "Erst wegnehmen, dann fokussieren.", "bonus": 1.25 },
+        { "partner": "engstelle", "chordName": "Klarer Tag", "effect": "Die Ein-Prozent-Spur sagt wo, die Engstelle sagt wann zuerst.", "bonus": 1.25 }
+      ],
+      "tensions": [],
+      "difficulty": 1,
+      "estimatedMinutes": 10,
+      "lifeDomains": ["zeit", "geld", "klarheit"],
+      "attribution": {
+        "originName": "Vilfredo Pareto / Joseph Juran",
+        "originKind": "person",
+        "originYear": 1896,
+        "note": "Pareto beschrieb die ungleiche Verteilung, Juran machte daraus Jahrzehnte später ein Arbeitsprinzip; die rekursive Zuspitzung folgt direkt aus der Verteilung.",
+        "furtherReading": null
+      },
+      "tags": ["fokus", "hebel", "prioritaet"]
+    },
+
+    {
+      "id": "engstelle",
+      "schemaVersion": 1,
+      "world": "werkstatt",
+      "orderInWorld": 3,
+      "title": "Die Engstelle",
+      "subtitle": "Eine Stelle entscheidet",
+      "core": "Jedes System hat eine Stelle, die den Durchsatz begrenzt — alles andere zu verbessern ändert nichts.",
+      "expandedCore": "Ein System ist nie so schnell wie sein Durchschnitt, sondern so schnell wie seine engste Stelle. Verbesserungen vor der Engstelle erzeugen Stau, Verbesserungen dahinter erzeugen Leerlauf — beides fühlt sich nach Arbeit an und bewegt nichts. Deshalb ist die einzige sinnvolle Frage an einem vollen Tag nicht „Was ist wichtig?“, sondern „Wo steht es gerade?“",
+      "metaphor": {
+        "imageLine": "Ein Glasrohr voller Kugeln, eine einzige Stelle ist verengt — überall drehen hilft nicht.",
+        "sceneID": "scene.rohr",
+        "primaryObject": "Der Verengungsring",
+        "interaction": "oeffnen",
+        "successState": "Die Kugeln laufen gleichmäßig durch, das ganze Rohr leuchtet in einer Farbe."
+      },
+      "recognition": [
+        {
+          "id": "engstelle.q1",
+          "situation": "Design ist fertig. Entwicklung wartet seit acht Tagen auf deine Freigabe. Marketing arbeitet vor.",
+          "prompt": "Was tust du?",
+          "options": [
+            { "id": "a", "text": "Mehr Entwickler einplanen, damit es schneller geht.", "isCorrect": false, "fallacyID": "kapazitaets-reflex", "feedback": "Mehr Kapazität hinter der Engstelle erzeugt nur mehr Wartende." },
+            { "id": "b", "text": "Marketing bremsen, damit alle im Takt sind.", "isCorrect": false, "fallacyID": "gleichschritt-irrtum", "feedback": "Gleichmäßige Auslastung ist kein Ziel. Durchsatz ist das Ziel." },
+            { "id": "c", "text": "Heute die Freigabe geben, alles andere danach.", "isCorrect": true, "fallacyID": null, "feedback": "Richtig. Du bist die Engstelle — und das ist die beste Nachricht des Tages." }
+          ]
+        },
+        {
+          "id": "engstelle.q2",
+          "situation": "Dein Verkauf läuft: viele Anfragen, viele Angebote. Aber kaum Abschlüsse, weil die Verträge wochenlang bei der Prüfung liegen.",
+          "prompt": "Wohin gehört dein nächster Euro?",
+          "options": [
+            { "id": "a", "text": "In mehr Werbung — mehr Anfragen, mehr Abschlüsse.", "isCorrect": false, "fallacyID": "kapazitaets-reflex", "feedback": "Mehr Anfragen verlängern nur die Warteschlange vor der Prüfung." },
+            { "id": "b", "text": "In die Vertragsprüfung, bis sie nicht mehr der Flaschenhals ist.", "isCorrect": true, "fallacyID": null, "feedback": "Ja. Der Euro an der Engstelle ist der einzige, der den Durchsatz erhöht." },
+            { "id": "c", "text": "In ein besseres Angebot, damit schneller entschieden wird.", "isCorrect": false, "fallacyID": "falsche-baustelle", "feedback": "Das Angebot ist nicht das Problem — die Kunden wollen ja schon." }
+          ]
+        },
+        {
+          "id": "engstelle.q3",
+          "situation": "Du hast die Engstelle beseitigt. Alles läuft. Nach drei Wochen stockt es wieder — an anderer Stelle.",
+          "prompt": "Was bedeutet das?",
+          "options": [
+            { "id": "a", "text": "Die erste Lösung war falsch.", "isCorrect": false, "fallacyID": "rueckfall-fehlschluss", "feedback": "Nein — sie hat funktioniert. Deshalb ist die Engstelle gewandert." },
+            { "id": "b", "text": "Normal: Die Engstelle wandert, sobald sie gelöst ist. Neu suchen.", "isCorrect": true, "fallacyID": null, "feedback": "Genau. Engstelle finden ist keine Aufgabe, sondern eine Gewohnheit." },
+            { "id": "c", "text": "Das System ist grundsätzlich überlastet, es braucht mehr Leute.", "isCorrect": false, "fallacyID": "kapazitaets-reflex", "feedback": "Erst die neue Engstelle bestimmen. Sonst kaufst du Kapazität an der falschen Stelle." }
+          ]
+        }
+      ],
+      "explainPrompt": "Erklär in eigenen Worten, warum eine Verbesserung an der falschen Stelle nicht nur nutzlos, sondern schädlich sein kann. Nimm ein Beispiel aus deiner Arbeit.",
+      "drill": {
+        "id": "engstelle.drill",
+        "title": "Finde die Verengung",
+        "instruction": "Nenne dein wichtigstes Vorhaben. Schreib die Kette der Schritte auf, die passieren müssen. Markiere den Schritt, der seit über einer Woche steht. Formuliere eine Aktion von höchstens 30 Minuten, die genau ihn löst — und mach sie heute.",
+        "durationMinutes": 6,
+        "inputKind": { "liste": { "min": 4 } },
+        "minEvidenceChars": 70,
+        "windowHours": 24
+      },
+      "selfCheck": {
+        "question": "Ist die 30-Minuten-Aktion erledigt oder mit Uhrzeit eingetragen?",
+        "passCriteria": [
+          "Die Schrittkette hat mindestens 4 Einträge.",
+          "Genau ein Schritt ist als Engstelle markiert.",
+          "Die zugehörige Aktion ist als erledigt oder terminiert bestätigt."
+        ]
+      },
+      "antiPattern": {
+        "id": "kapazitaets-reflex",
+        "name": "Der Kapazitäts-Reflex",
+        "tellTale": "„Wir brauchen einfach mehr Leute / mehr Budget / mehr Zeit.“",
+        "counterMove": "Frag zuerst, wo es steht. Kapazität hilft nur genau an der Engstelle — überall sonst erzeugt sie Stau oder Leerlauf."
+      },
+      "teachTask": {
+        "prompt": "Erklär jemandem in 60 Sekunden, warum sein Team nicht schneller wird, wenn alle schneller arbeiten.",
+        "maxSeconds": 60,
+        "requiredElements": ["eigenes Beispiel", "keine Fachwörter"]
+      },
+      "prerequisites": [],
+      "synergies": [
+        { "partner": "schnitt", "chordName": "Klarer Tag", "effect": "Weniger Vorhaben macht die Engstelle überhaupt sichtbar.", "bonus": 1.25 },
+        { "partner": "ein-prozent-spur", "chordName": "Klarer Tag", "effect": "Spur sagt wo der Hebel ist, Engstelle sagt was zuerst dran ist.", "bonus": 1.25 }
+      ],
+      "tensions": [],
+      "difficulty": 2,
+      "estimatedMinutes": 8,
+      "lifeDomains": ["zeit", "klarheit", "menschen"],
+      "attribution": {
+        "originName": "Eliyahu M. Goldratt",
+        "originKind": "person",
+        "originYear": 1984,
+        "note": "Goldratt formulierte die Engpass-Theorie für Fabriken; sie gilt unverändert für Teams, Projekte und einzelne Tage.",
+        "furtherReading": null
+      },
+      "tags": ["prioritaet", "durchsatz", "diagnose"]
+    }
+  ]
+}
