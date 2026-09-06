@@ -156,12 +156,15 @@ public enum ContentLoader {
     }
 
     /// Lädt `Resources/worlds/<id>.json` aus `Bundle.module`.
+    /// Im gebauten Bundle liegt die Datei unter
+    /// `Bundle.module.url(forResource: id, withExtension: "json", subdirectory: "Resources/worlds")`.
     public static func bundledWorld(_ id: String) throws -> World {
         // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
         return World(id: "", title: "", principles: [])
     }
 
-    /// Lädt `Resources/fallacies.json` aus `Bundle.module`.
+    /// Lädt `Resources/fallacies.json` aus `Bundle.module`
+    /// (`subdirectory: "Resources"`, Wurzelelement ist ein JSON-Array).
     public static func bundledFallacies() throws -> [Fallacy] {
         // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
         return []

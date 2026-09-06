@@ -88,11 +88,11 @@ enum TestContent {
     }
 
     /// Ersetzt in einem Prinzip die erste Option der ersten Erkennungsfrage.
-    static func brokenWorld(
+    static func brokenOption(
         principle id: String,
-        firstOption patch: @escaping (inout [String: Any]) -> Void
+        _ patch: @escaping (inout [String: Any]) -> Void
     ) throws -> World {
-        try brokenWorld(principle: id) { principle in
+        try brokenWorld(principle: id) { (principle: inout [String: Any]) in
             guard var questions = principle["recognition"] as? [[String: Any]],
                   var first = questions.first,
                   var options = first["options"] as? [[String: Any]],

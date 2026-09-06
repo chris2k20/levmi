@@ -9,7 +9,8 @@
 - **Licht** ist die knappe Session-Ressource im Spiel (erzeugt Wurzeln, keine Tage).
 - **Tage** sind die einzige sichtbare Währung und entstehen nur aus angenommenen Beweisen (≥ 40 Zeichen, konkret, keine Abschrift). Ein Beweis = Sonne geht auf = Insel wächst = +1 Tag. Höchstens ein Tag pro Prinzip pro 24 h.
 - Keine Punkte, kein XP, keine Sterne, kein Ranking, kein Leaderboard. Keine Streak-Bestrafung, kein Verlust-Countdown. Streaks (später) in Wochen mit ≥ 3 Beweis-Tagen.
-- Mastery-Stufe „Angewendet" ist erst ≥ 60 Minuten nach dem Schließen erreichbar (Demo-Modus verkürzt nur Zeitkonstanten, schaltet keine Regel ab).
+- Der Beweis ist frühestens ab `readyAt` möglich: 10 Minuten nach der Absicht, bei Absichten nach 20 Uhr ab 06:00 des Folgetags (gekoppelt an die Absicht, nicht an das Schließen der App). Das ersetzt die ursprünglich diskutierte 60-Minuten-Sperre: Sie bestrafte genau den Nutzer, der gehandelt hat (Nutzerbefragung, Red Team). Der Demo-Modus verkürzt nur Zeitkonstanten (30 s), schaltet keine Regel ab.
+- Lauwarme Entscheidungen kosten wirklich: Ein auf einen lauwarmen Knoten gesetztes Licht ist weg (kein Ersatz); der Durchbruch fällt kleiner aus. Ohne Preis gäbe es nur einen möglichen Ausgang und keine Diagnose (Red Team A1).
 - Die App schickt den Spieler nach der Session aktiv weg („Für heute reicht's").
 
 ## Konsequenzen

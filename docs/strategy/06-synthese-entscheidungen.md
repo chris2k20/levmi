@@ -42,7 +42,7 @@ Das ist die belastbarste Erkenntnis der Runde, weil niemand die Memos der andere
 
 ### 3b. Welt: eine Insel im Nebelmeer (Director) vs. Szene pro Gesetz (Learning-Designer)
 **Entscheidung: Eine persistente Welt, die Insel im Nebelmeer. Jedes Gesetz ist eine Station auf der Insel mit eigener Mikro-Mechanik.**
-Die Stationen nutzen die Archetypen des Directors (Knappheit, Filter, Drossel, Kompass, Schloss, Verzögerung, Schwelle, Zähler, Wurzel, Spiegel, Kette, Leere). Die Learning-Designer-Metaphern (Werkbank, Hangar, Glasrohr) werden Stationen, keine getrennten Level. Für den PoC gibt es genau eine Station: **Der Schnitt** als Stimmgabel-Filter (drei Knoten: einer singt, einer brummt, einer flirrt lauwarm und frisst Licht).
+Die Stationen nutzen die Archetypen des Directors (Knappheit, Filter, Drossel, Kompass, Schloss, Verzögerung, Schwelle, Zähler, Wurzel, Spiegel, Kette, Leere). Die Learning-Designer-Metaphern (Werkbank, Hangar, Glasrohr) werden Stationen, keine getrennten Level. Für den PoC gibt es genau eine Station: **Der Schnitt** als Stimmgabel-Filter (fünf Knoten: zwei singen, einer brummt, zwei flirren lauwarm und fressen das Licht wirklich; zwei Lichter pro Nacht).
 
 ### 3c. Rhythmus: „Nacht → Morgengrauen" (Director) vs. „Morgens Absicht, abends Beweis" (Psychologe)
 **Entscheidung: Beides ist dasselbe, wenn man es richtig verdrahtet.**
@@ -85,12 +85,12 @@ Levmi ist eine Insel im Nebelmeer, die nur aus dem wächst, was du im echten Leb
 Vollständige Spezifikation in `docs/design/poc-spec.md`. Kurzform:
 
 - **Eine Welt:** Inselfragment im Nebelmeer, Orbit-Kamera, HDR-Bloom, Fog, Spiegelwasser, Partikel.
-- **Eine Station, drei Mechaniken:** Licht setzen unter Knappheit (Pareto, gefühlt) · Stimmgabel-Filter (Der Schnitt: singt/brummt/flirrt) · Wurzel → Sonne hochziehen → Durchbruch (verzögerte Auszahlung).
+- **Eine Station, drei Mechaniken:** Licht setzen unter Knappheit (zwei Lichter, fünf Knoten; Pareto, gefühlt) · Stimmgabel-Filter (Der Schnitt: singt/brummt/flirrt; Lauwarm kostet das Licht wirklich, der Durchbruch wird kleiner) · Wurzel → Sonne hochziehen → Durchbruch (verzögerte Auszahlung).
 - **Der Beweis-Loop komplett für ein Gesetz:** Absicht → App zu → zurück → Beweis (≥ 40 Zeichen, kein Abschreiben) → Sonne → Durchbruch → +1 Tag → eigener Satz wird gespeichert und später zurückgespielt.
 - **Onboarding nach dem Erfolg:** 6 Hass-Kacheln → Umkehr → „Wofür?" → Absicht → „Für heute reicht's".
 - **Content als Daten:** `Content/worlds/werkstatt/*.json` mit drei Karten (Schnitt, Ein-Prozent-Spur, Engstelle), Validator mit Tests. Karten 2 und 3 laufen im PoC als Karten ohne eigene 3D-Station.
 - **Haptik + prozeduraler Sound** im Build (Haptik wirkt nur auf dem Gerät).
-- **Demo-Modus** als separates Flag, damit du morgen früh die 60-Minuten-Sperre und den Zeitversatz in 30 Sekunden erleben kannst, ohne dass die Regel aufgeweicht wird.
+- **Demo-Modus** als separates Flag, damit du anderen den Loop in 30 Sekunden Sperre vorführen kannst. **Die These prüfst du nur im Echt-Modus:** heute Nacht eine Absicht setzen, die du morgen früh wirklich tust, morgen den echten Beweis geben (Sperre: 10 Minuten nach der Absicht, nach 20 Uhr ab 06:00).
 
 **Fliegt raus:** 40 Gesetze, Menüs, Accounts, Cloud, Shop, Sharing, Lehren, Streaks, Wochenrückblick, Spaced Repetition (Stufen 4–5), Lokalisierung, App-Store-Assets, Device-Deploy, importierte 3D-Assets, Custom-Shader.
 
@@ -125,6 +125,10 @@ Das Growth-Memo ist das unbequemste der fünf, und es ist belegt (aus deinem eig
 ## 8b. Simulierte Nutzerbefragung (Memo 08): was sie geändert hat
 
 Fünf Personas (Markus 44 Investor, Lena 29 Angestellte mit Nebenprojekt, Tobias 36 Handwerksmeister, Sabine 52 Steuerberaterin, Jonas 23 Student) haben den Ablauf auf dem Papier gespielt. Wiederkommen: 7 · 8 · 3 · 5 · 2. Der Loop trägt bei allen fünf; die Abbrüche sind reparierbar und wurden in die Spec eingearbeitet: Geste-Affordance in den ersten Sekunden (atmen → Partikelspur → erst nach 7 s Text), fünf Knoten und zwei Lichter pro Nacht (damit der Lauwarm-Lernmoment nicht optional bleibt), der lauwarme Knoten sieht bis zur Setzung verführerisch aus (keine beschriftete Falle), die Rückkehr-Sperre sinkt auf 10 Minuten und nennt eine Uhrzeit statt einer Abfuhr, „Bleibt auf deinem Gerät." unter jedem Freitext, eine positive Share-Card direkt nach der Umkehr-Animation, „+1 Tag" ohne demotivierenden 1/30-Balken, Reset-Knopf im Debug-Build für den Dreimal-Test. Zielgruppen-Entscheidung als ADR 06: Markus und Lena sind der Kern, Sabine ist gewinnbar, Tobias vertagt (Sprach-Beweis), Jonas bewusst nicht.
+
+## 8c. Red-Team-Kritik (Memo 07): Go mit vier Bedingungen, alle umgesetzt
+
+Go, unter vier Bedingungen: Schnittlinie mit Uhrzeiten in der Spec (jetzt Abschnitt 0: MDP bis 03:00, P1 bis 05:00, P2 danach, Kill-Reihenfolge) · Reducer-Löcher geschlossen, bevor Tests entstehen (Knoten-Identität, Wiederherstellung der Szene aus dem Zustand bei jedem `appOpened`, Sonne monoton, `breakthroughFinished` vom Renderer, Sperre an die Absicht gekoppelt, Lauwarm kostet wirklich, Befund aus dem Widerspruch Gesagtes/Getanes mit Zahlen und einem zweiten Satz bei „Stimmt nicht") · Dokumente angeglichen (10 Minuten, fünf Knoten; ADR 02 aktualisiert) und Reduce Motion, Flacker-Rampe, VoiceOver-Elemente im Build · und: Ich spiele heute Nacht den Echt-Modus, du gibst morgen früh einen echten Beweis. Gestrichen oder nach P2: beide Share-Cards, Audio-Tiefe, Validator-Rest.
 
 ## 9. Was ich heute Nacht trotzdem baue, obwohl Growth „Werkzeug statt Spiel" sagt
 

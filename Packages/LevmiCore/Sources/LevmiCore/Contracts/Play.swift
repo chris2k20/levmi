@@ -102,6 +102,7 @@ public struct PlayerState: Codable, Sendable, Equatable {
     public var why: String?
     public var intention: Intention?
     public var closedAt: Date?
+    public var readyAt: Date?
     public var progress: [String: PrincipleProgress]
     public var days: Int
     public var ownSentences: [OwnSentence]
@@ -113,12 +114,13 @@ public struct PlayerState: Codable, Sendable, Equatable {
         phase: GamePhase = .firstLight,
         createdAt: Date = Date(timeIntervalSince1970: 0),
         lastOpenedAt: Date = Date(timeIntervalSince1970: 0),
-        lightsRemaining: Int = 1,
+        lightsRemaining: Int = 2,
         lightColorTile: PainTile? = nil,
         pains: [PainTile] = [],
         why: String? = nil,
         intention: Intention? = nil,
         closedAt: Date? = nil,
+        readyAt: Date? = nil,
         progress: [String: PrincipleProgress] = [:],
         days: Int = 0,
         ownSentences: [OwnSentence] = [],
@@ -135,6 +137,7 @@ public struct PlayerState: Codable, Sendable, Equatable {
         self.why = why
         self.intention = intention
         self.closedAt = closedAt
+        self.readyAt = readyAt
         self.progress = progress
         self.days = days
         self.ownSentences = ownSentences

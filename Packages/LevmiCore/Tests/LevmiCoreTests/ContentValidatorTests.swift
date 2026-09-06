@@ -56,7 +56,7 @@ struct ContentValidatorTests {
 
     @Test("Regel 2: zwei korrekte Optionen werden gemeldet")
     func zweiKorrekteOptionen() throws {
-        let world = try TestContent.brokenWorld(principle: "schnitt", firstOption: { option in
+        let world = try TestContent.brokenOption(principle: "schnitt", { option in
             option["isCorrect"] = true
             option["fallacyID"] = nil
         })
@@ -66,7 +66,7 @@ struct ContentValidatorTests {
 
     @Test("Regel 2: eine falsche Option ohne fallacyID wird gemeldet")
     func falscheOptionOhneDenkfehler() throws {
-        let world = try TestContent.brokenWorld(principle: "schnitt", firstOption: { option in
+        let world = try TestContent.brokenOption(principle: "schnitt", { option in
             option["fallacyID"] = nil
         })
         let issues = ContentValidator.validate(world)
@@ -170,7 +170,7 @@ struct ContentValidatorTests {
 
     @Test("Regel 6: ein Sperrbegriff im Feedback einer Option wird gemeldet")
     func sperrbegriffImFeedback() throws {
-        let world = try TestContent.brokenWorld(principle: "schnitt", firstOption: { option in
+        let world = try TestContent.brokenOption(principle: "schnitt", { option in
             option["feedback"] = "Das sagt Alex Fischer auch immer."
         })
         let issues = ContentValidator.validate(world)
