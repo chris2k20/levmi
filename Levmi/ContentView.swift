@@ -3,16 +3,21 @@ import LevmiCore
 
 struct ContentView: View {
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 12) {
+        ZStack(alignment: .top) {
+            SceneKitSpikeView()
+                .ignoresSafeArea()
+            VStack(spacing: 6) {
                 Text("LEVMI")
-                    .font(.system(size: 44, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                Text("Core \(LevmiCore.version) · skeleton")
+                    .font(.system(size: 40, weight: .black, design: .rounded))
+                    .tracking(6)
+                Text("Spike · SceneKit · HDR Bloom · Core \(LevmiCore.version)")
                     .font(.footnote.monospaced())
                     .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 14)
+            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .padding(.top, 12)
         }
         .accessibilityIdentifier("root")
     }
