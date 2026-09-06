@@ -7,14 +7,44 @@ public struct Intention: Codable, Sendable, Equatable, Identifiable {
     public let principleID: PrincipleID
     public let text: String
     public let createdAt: Date
+    public var earliestProofAt: Date
     public var dueBy: Date
 
-    public init(id: String, principleID: PrincipleID, text: String, createdAt: Date, dueBy: Date) {
+    public init(
+        id: String,
+        principleID: PrincipleID,
+        text: String,
+        createdAt: Date,
+        earliestProofAt: Date,
+        dueBy: Date
+    ) {
         self.id = id
         self.principleID = principleID
         self.text = text
         self.createdAt = createdAt
+        self.earliestProofAt = earliestProofAt
         self.dueBy = dueBy
+    }
+
+    /// `earliestProofAt = now + rules.appliedLock`; bei lokaler Stunde ≥ 20 und
+    /// `appliedLock >= 600` stattdessen 06:00 des Folgetags.
+    /// `dueBy = earliestProofAt + rules.proofWindow`.
+    public static func make(
+        text: String,
+        principleID: PrincipleID,
+        now: Date,
+        rules: Rules,
+        calendar: Calendar = .current
+    ) -> Intention {
+        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
+        return Intention(
+            id: "",
+            principleID: principleID,
+            text: text,
+            createdAt: now,
+            earliestProofAt: Date(timeIntervalSince1970: 0),
+            dueBy: Date(timeIntervalSince1970: 0)
+        )
     }
 }
 

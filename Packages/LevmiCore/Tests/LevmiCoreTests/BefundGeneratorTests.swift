@@ -5,83 +5,180 @@ import Testing
 @Suite("BefundGenerator")
 struct BefundGeneratorTests {
 
-    static let lauwarmSatz = "Dein Muster: Du prüfst das Lauwarme, statt es zu kippen."
-    static let neinZuerstSatz = "Du erkennst ein Nein, bevor du das Glühende suchst."
-    static let sofortSatz = "Du erkennst Glühendes sofort. Dein Engpass liegt nicht im Entscheiden, sondern im Wegräumen."
+    static let jetzt = TestClock.epoch
+    static let absichtUm = TestClock.epoch.addingTimeInterval(-2 * T.hour)
 
-    @Test("Fall 1: wer lauwarm gesetzt hat, bekommt den Lauwarm-Befund")
-    func lauwarmerFall() {
-        let befund = BefundGenerator.generate(
-            pains: [.zuVielLauwarmes, .zeitWeg],
-            nodeOutcomes: [.lukewarm, .cold, .glowing],
-            fallacyHits: ["lauwarm-lager": 1]
+    static func zustand(
+        pains: [PainTile],
+        placements: [Placement],
+        proofAt: Date? = nil
+    ) -> PlayerState {
+        var progress = PrincipleProgress(
+            id: "schnitt",
+            stage: .applied,
+            stageEnteredAt: absichtUm
         )
-        #expect(befund.sentence == Self.lauwarmSatz)
+        if let proofAt {
+            progress.proofs = [Proof.fixture(submittedAt: proofAt)]
+        }
+        return PlayerState(
+            phase: .cost,
+            createdAt: absichtUm,
+            lastOpenedAt: jetzt,
+            lightsRemaining: 0,
+            nodes: [
+                NodeSpec(id: 0, kind: .glowing),
+                NodeSpec(id: 1, kind: .lukewarm),
+                NodeSpec(id: 2, kind: .cold),
+                NodeSpec(id: 3, kind: .glowing),
+                NodeSpec(id: 4, kind: .lukewarm)
+            ],
+            litNodeIDs: placements.filter { $0.kind != .cold }.map(\.nodeID),
+            nodeOutcomes: placements.map(\.kind),
+            placements: placements,
+            pains: pains,
+            intention: .fixture(createdAt: absichtUm, earliestProofAt: absichtUm.addingTimeInterval(600)),
+            progress: ["schnitt": progress],
+            days: 1
+        )
+    }
+
+    // MARK: - F1
+
+    @Test("F1: gesagt „Zu viel Lauwarmes“, getan zweimal lauwarm")
+    func f1_widerspruch() {
+        let befund = BefundGenerator.generate(
+            state: Self.zustand(
+                pains: [.zuVielLauwarmes, .zeitWeg],
+                placements: [.fixture(1, .lukewarm), .fixture(4, .lukewarm)]
+            ),
+            now: Self.jetzt
+        )
+        #expect(befund.sentence.contains("Zu viel Lauwarmes"))
+        #expect(befund.sentence.contains("2-mal"))
         #expect(befund.principleID == "schnitt")
     }
 
-    @Test("Fall 1: die Evidenz nennt Anzahl und Denkfehler-ID")
-    func lauwarmerFallEvidenz() {
+    @Test("F1: die Zahl folgt den tatsächlichen Setzungen")
+    func f1_zahlStimmt() {
         let befund = BefundGenerator.generate(
-            pains: [.zuVielLauwarmes],
-            nodeOutcomes: [.lukewarm, .lukewarm, .glowing],
-            fallacyHits: ["lauwarm-lager": 2]
+            state: Self.zustand(
+                pains: [.zuVielLauwarmes],
+                placements: [.fixture(1, .lukewarm), .fixture(0, .glowing)]
+            ),
+            now: Self.jetzt
         )
-        #expect(befund.evidence.isEmpty == false)
-        #expect(befund.evidence.contains { $0.contains("2") })
-        #expect(befund.evidence.contains { $0.contains("lauwarm-lager") })
+        #expect(befund.sentence.contains("1-mal"))
+        #expect(befund.sentence.contains("2-mal") == false)
     }
 
-    @Test("Fall 2: wer zuerst kalt und dann glühend setzt, erkennt das Nein früher")
-    func kaltVorGluehend() {
-        let befund = BefundGenerator.generate(
-            pains: [.keinFortschritt],
-            nodeOutcomes: [.cold, .glowing],
-            fallacyHits: [:]
-        )
-        #expect(befund.sentence == Self.neinZuerstSatz)
-        #expect(befund.principleID == "schnitt")
-        #expect(befund.evidence.isEmpty == false)
-    }
+    // MARK: - F2
 
-    @Test("Fall 3: wer direkt das Glühende trifft, hat den Engpass im Wegräumen")
-    func direktGluehend() {
+    @Test("F2: nach dem ersten Lauwarmen nur noch Glühendes")
+    func f2_erkanntUndUmgesteuert() {
         let befund = BefundGenerator.generate(
-            pains: [.zeitWeg, .immerErreichbar],
-            nodeOutcomes: [.glowing],
-            fallacyHits: [:]
+            state: Self.zustand(
+                pains: [.zeitWeg],
+                placements: [.fixture(1, .lukewarm), .fixture(0, .glowing)],
+                proofAt: Self.absichtUm.addingTimeInterval(43 * T.minute)
+            ),
+            now: Self.jetzt
         )
-        #expect(befund.sentence == Self.sofortSatz)
+        #expect(befund.sentence.contains("nach dem ersten Mal erkannt"))
+        #expect(befund.sentence.contains("43"))
         #expect(befund.principleID == "schnitt")
     }
 
-    @Test("Fall 3: die erste Kachel ist die Evidenz")
-    func ersteKachelAlsEvidenz() {
+    // MARK: - F3
+
+    @Test("F3: erst das Nein, dann die Suche nach dem Glühenden")
+    func f3_kaltVorGluehend() {
         let befund = BefundGenerator.generate(
-            pains: [.zeitWeg, .immerErreichbar],
-            nodeOutcomes: [.glowing],
-            fallacyHits: [:]
+            state: Self.zustand(
+                pains: [.keinFortschritt],
+                placements: [.fixture(2, .cold), .fixture(0, .glowing)]
+            ),
+            now: Self.jetzt
         )
-        #expect(befund.evidence.isEmpty == false)
-        // Die Kachel darf als Roh-ID oder als Klartext auftauchen, aber sie muss auftauchen.
-        #expect(befund.evidence.contains { $0.lowercased().contains("zeit") })
-        #expect(befund.evidence.contains { $0.lowercased().contains("erreichbar") } == false)
+        #expect(befund.sentence.contains("bevor du das Glühende suchst"))
+        #expect(befund.principleID == "schnitt")
     }
 
-    @Test("Lauwarm schlägt jede andere Regel")
-    func lauwarmHatVorrang() {
+    // MARK: - F4
+
+    @Test("F4: zwei Lichter, zwei Treffer")
+    func f4_zweiTreffer() {
         let befund = BefundGenerator.generate(
-            pains: [.zeitWeg],
-            nodeOutcomes: [.cold, .lukewarm, .glowing],
-            fallacyHits: ["lauwarm-lager": 1]
+            state: Self.zustand(
+                pains: [.zeitWeg],
+                placements: [.fixture(0, .glowing), .fixture(3, .glowing)]
+            ),
+            now: Self.jetzt
         )
-        #expect(befund.sentence == Self.lauwarmSatz)
+        #expect(befund.sentence.contains("Zwei Lichter, zwei Treffer"))
+        #expect(befund.principleID == "schnitt")
     }
 
-    @Test("Auch ohne Kacheln und ohne Setzungen entsteht ein vollständiger Befund")
-    func leereEingabe() {
-        let befund = BefundGenerator.generate(pains: [], nodeOutcomes: [], fallacyHits: [:])
+    // MARK: - Gemeinsame Zusagen
+
+    @Test("Jeder Fall liefert eine andere Alternative und Evidenz")
+    func alleFaelleSindVollstaendig() {
+        let faelle: [PlayerState] = [
+            Self.zustand(pains: [.zuVielLauwarmes], placements: [.fixture(1, .lukewarm)]),
+            Self.zustand(
+                pains: [.zeitWeg],
+                placements: [.fixture(1, .lukewarm), .fixture(0, .glowing)],
+                proofAt: Self.absichtUm.addingTimeInterval(12 * T.minute)
+            ),
+            Self.zustand(pains: [.zeitWeg], placements: [.fixture(2, .cold), .fixture(0, .glowing)]),
+            Self.zustand(pains: [], placements: [.fixture(0, .glowing), .fixture(3, .glowing)])
+        ]
+        for zustand in faelle {
+            let befund = BefundGenerator.generate(state: zustand, now: Self.jetzt)
+            #expect(befund.sentence.isEmpty == false)
+            #expect(befund.alternative.isEmpty == false)
+            #expect(befund.alternative != befund.sentence)
+            #expect(befund.evidence.isEmpty == false)
+            #expect(befund.principleID == "schnitt")
+        }
+        #expect(faelle.count == 4)
+    }
+
+    @Test("Die vier Fälle liefern vier verschiedene Sätze")
+    func vierVerschiedeneSaetze() {
+        let saetze = [
+            BefundGenerator.generate(
+                state: Self.zustand(pains: [.zuVielLauwarmes], placements: [.fixture(1, .lukewarm)]),
+                now: Self.jetzt
+            ).sentence,
+            BefundGenerator.generate(
+                state: Self.zustand(
+                    pains: [.zeitWeg],
+                    placements: [.fixture(1, .lukewarm), .fixture(0, .glowing)],
+                    proofAt: Self.absichtUm.addingTimeInterval(12 * T.minute)
+                ),
+                now: Self.jetzt
+            ).sentence,
+            BefundGenerator.generate(
+                state: Self.zustand(pains: [.zeitWeg], placements: [.fixture(2, .cold), .fixture(0, .glowing)]),
+                now: Self.jetzt
+            ).sentence,
+            BefundGenerator.generate(
+                state: Self.zustand(pains: [], placements: [.fixture(0, .glowing), .fixture(3, .glowing)]),
+                now: Self.jetzt
+            ).sentence
+        ]
+        #expect(Set(saetze).count == 4)
+    }
+
+    @Test("Ohne jede Setzung entsteht trotzdem ein vollständiger Satz")
+    func leererZustand() {
+        let befund = BefundGenerator.generate(
+            state: Self.zustand(pains: [], placements: []),
+            now: Self.jetzt
+        )
         #expect(befund.sentence.isEmpty == false)
+        #expect(befund.alternative.isEmpty == false)
         #expect(befund.evidence.isEmpty == false)
         #expect(befund.principleID == "schnitt")
     }

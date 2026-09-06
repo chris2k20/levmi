@@ -111,6 +111,23 @@ enum TestContent {
 
 extension Array where Element == Effect {
 
+    var restoredSnapshot: SceneSnapshot? {
+        for effect in self {
+            if case .scene(.restore(let snapshot)) = effect { return snapshot }
+        }
+        return nil
+    }
+
+    var beginntMitRestore: Bool {
+        if case .scene(.restore) = first { return true }
+        return false
+    }
+
+    /// Alles nach dem führenden `.restore` — die phasenspezifischen Effekte.
+    var nachRestore: [Effect] {
+        beginntMitRestore ? Array(dropFirst()) : self
+    }
+
     var rejectReason: String? {
         for effect in self {
             if case .reject(let reason) = effect { return reason }
@@ -118,7 +135,7 @@ extension Array where Element == Effect {
         return nil
     }
 
-    var presentedNodes: [NodeKind]? {
+    var presentedNodes: [NodeSpec]? {
         for effect in self {
             if case .scene(.presentNodes(let nodes)) = effect { return nodes }
         }
@@ -128,6 +145,13 @@ extension Array where Element == Effect {
     var sunProgress: Double? {
         for effect in self {
             if case .scene(.sunProgress(let progress)) = effect { return progress }
+        }
+        return nil
+    }
+
+    var breakthroughTier: BreakthroughTier? {
+        for effect in self {
+            if case .scene(.breakthrough(let tier)) = effect { return tier }
         }
         return nil
     }
@@ -153,6 +177,13 @@ extension Array where Element == Effect {
         return nil
     }
 
+    var reminder: (at: Date, text: String)? {
+        for effect in self {
+            if case .scheduleReminder(let at, let text) = effect { return (at, text) }
+        }
+        return nil
+    }
+
     func position(of effect: Effect) -> Int? {
         firstIndex(of: effect)
     }
@@ -160,15 +191,32 @@ extension Array where Element == Effect {
 
 // MARK: - Kleine Bauhelfer
 
+extension PlayerState {
+    /// Erster Knoten dieser Art, der noch nicht gesetzt wurde.
+    func freierKnoten(_ kind: NodeKind) -> NodeSpec? {
+        nodes.first { node in
+            node.kind == kind && !litNodeIDs.contains(node.id)
+        }
+    }
+}
+
 extension Intention {
     static func fixture(
         id: String = "i1",
         principleID: String = "schnitt",
-        text: String = "Sag heute zu einer lauwarmen Sache ab, ein Satz, keine Begründung.",
+        text: String = "Sag zu einer lauwarmen Sache ab. Ein Satz, keine Begründung.",
         createdAt: Date = TestClock.epoch,
-        dueBy: Date = Date(timeIntervalSince1970: 0)
+        earliestProofAt: Date = TestClock.epoch.addingTimeInterval(600),
+        dueBy: Date = TestClock.epoch.addingTimeInterval(600 + 86_400)
     ) -> Intention {
-        Intention(id: id, principleID: principleID, text: text, createdAt: createdAt, dueBy: dueBy)
+        Intention(
+            id: id,
+            principleID: principleID,
+            text: text,
+            createdAt: createdAt,
+            earliestProofAt: earliestProofAt,
+            dueBy: dueBy
+        )
     }
 }
 
@@ -190,5 +238,11 @@ extension Proof {
         principleID: String = "schnitt"
     ) -> Proof {
         Proof(text: text, submittedAt: submittedAt, principleID: principleID)
+    }
+}
+
+extension Placement {
+    static func fixture(_ nodeID: Int, _ kind: NodeKind, at: Date = TestClock.epoch) -> Placement {
+        Placement(nodeID: nodeID, kind: kind, at: at)
     }
 }

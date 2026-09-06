@@ -13,6 +13,21 @@ struct SaveStoreTests {
             createdAt: t0,
             lastOpenedAt: t0.addingTimeInterval(T.hour),
             lightsRemaining: 1,
+            nodes: [
+                NodeSpec(id: 0, kind: .glowing),
+                NodeSpec(id: 1, kind: .lukewarm),
+                NodeSpec(id: 2, kind: .cold),
+                NodeSpec(id: 3, kind: .glowing),
+                NodeSpec(id: 4, kind: .lukewarm)
+            ],
+            litNodeIDs: [1, 0],
+            nodeOutcomes: [.lukewarm, .cold, .glowing],
+            placements: [
+                .fixture(1, .lukewarm, at: t0),
+                .fixture(2, .cold, at: t0.addingTimeInterval(60)),
+                .fixture(0, .glowing, at: t0.addingTimeInterval(120))
+            ],
+            sunProgress: 1.0,
             lightColorTile: .zuVielLauwarmes,
             pains: [.zuVielLauwarmes, .zeitWeg],
             why: "Mehr Zeit für meine Kinder",
@@ -21,7 +36,8 @@ struct SaveStoreTests {
                 principleID: "schnitt",
                 text: "Sag heute zu einer lauwarmen Sache ab.",
                 createdAt: t0,
-                dueBy: t0.addingTimeInterval(T.day)
+                earliestProofAt: t0.addingTimeInterval(600),
+                dueBy: t0.addingTimeInterval(600 + T.day)
             ),
             closedAt: t0.addingTimeInterval(T.hour),
             readyAt: t0.addingTimeInterval(T.hour + 600),
@@ -41,13 +57,15 @@ struct SaveStoreTests {
                 OwnSentence.fixture(id: "s1", createdAt: t0, context: .why),
                 OwnSentence.fixture(id: "s2", text: "Zwei Minuten Mut.", createdAt: t0, context: .cost)
             ],
-            nodeOutcomes: [.lukewarm, .cold, .glowing],
+            lastShownSentenceID: "s1",
             befund: Befund(
-                sentence: "Dein Muster: Du prüfst das Lauwarme, statt es zu kippen.",
+                sentence: "Du hast ‚Zu viel Lauwarmes‘ angekreuzt — und heute Nacht trotzdem 1-mal Lauwarmes gefüttert.",
+                alternative: "Du hast das Lauwarme nach dem ersten Mal erkannt.",
                 evidence: ["lauwarm: 1", "lauwarm-lager"],
                 principleID: "schnitt"
             ),
-            befundAccepted: true
+            befundAccepted: true,
+            befundAlternativeShown: true
         )
     }
 

@@ -20,17 +20,47 @@ struct GameEngineTests {
         GameEngine.reduce(state, action, clock: clock, world: world, rules: rules)
     }
 
+    /// Fester Knotenteppich für konstruierte Zustände (im Spiel gemischt).
+    static let layout: [NodeSpec] = [
+        NodeSpec(id: 0, kind: .glowing),
+        NodeSpec(id: 1, kind: .lukewarm),
+        NodeSpec(id: 2, kind: .cold),
+        NodeSpec(id: 3, kind: .glowing),
+        NodeSpec(id: 4, kind: .lukewarm)
+    ]
+
     /// Ein gültiger Beweis: ≥ 40 Zeichen, konkret, keine Abschrift der Anleitung.
     static let guterBeweis = "Heute um 14 Uhr habe ich Tom per Nachricht abgesagt: ein Satz, keine Diskussion."
 
+    // MARK: - Regel 0
+
+    @Test("Regel 0: appOpened beginnt in jeder Phase mit der Wiederherstellung", arguments: GamePhase.allCases)
+    func regel0_restoreInJederPhase(phase: GamePhase) {
+        var state = beweisbereit()
+        state.phase = phase
+        let (next, effects) = reduce(state, .appOpened)
+        #expect(effects.isEmpty == false)
+        #expect(effects.beginntMitRestore)
+        #expect(next.lastOpenedAt == clock.now)
+    }
+
+    @Test("Regel 0: die Wiederherstellung zeigt den Zustand vor der Aktion")
+    func regel0_snapshotAusDemZustand() {
+        let state = beweisbereit()
+        let (_, effects) = reduce(state, .appOpened)
+        #expect(effects.restoredSnapshot == SceneProjection.snapshot(of: state))
+    }
+
     // MARK: - Regel 1
 
-    @Test("Regel 1: initial beginnt mit zwei Lichtern im ersten Licht")
+    @Test("Regel 1: initial beginnt mit zwei Lichtern, ohne Knoten")
     func regel1_initial() {
         let state = GameEngine.initial(clock: clock, rules: .standard)
         #expect(state.phase == .firstLight)
         #expect(state.lightsRemaining == 2)
+        #expect(state.nodes.isEmpty)
         #expect(state.days == 0)
+        #expect(state.sunProgress == 0)
         #expect(state.createdAt == clock.now)
         #expect(state.lastOpenedAt == clock.now)
     }
@@ -46,137 +76,321 @@ struct GameEngineTests {
 
     // MARK: - Regel 2
 
-    @Test("Regel 2: lightDropped hebt die Insel und stellt fünf Knoten vor")
-    func regel2_lightDropped() {
-        let (next, effects) = reduce(PlayerState(phase: .firstLight), .lightDropped)
+    @Test("Regel 2: lightDropped legt fünf Knoten mit stabilen IDs an")
+    func regel2_knotenEntstehen() {
+        let (next, _) = reduce(PlayerState(phase: .firstLight), .lightDropped)
         #expect(next.phase == .nodes)
-        #expect(effects.count == 5)
-        #expect(Array(effects.prefix(4)) == [
-            .scene(.revealIsland), .haptic(.impact), .sound(.impact), .scene(.cameraPullBack)
+        #expect(next.nodes.count == 5)
+        #expect(Set(next.nodes.map(\.id)) == [0, 1, 2, 3, 4])
+        #expect(next.nodes.filter { $0.kind == .glowing }.count == 2)
+        #expect(next.nodes.filter { $0.kind == .lukewarm }.count == 2)
+        #expect(next.nodes.filter { $0.kind == .cold }.count == 1)
+    }
+
+    @Test("Regel 2: lightDropped hebt die Insel und stellt die Knoten vor")
+    func regel2_effekte() {
+        let (next, effects) = reduce(PlayerState(phase: .firstLight), .lightDropped)
+        #expect(effects == [
+            .scene(.revealIsland),
+            .haptic(.impact),
+            .sound(.impact),
+            .scene(.cameraPullBack),
+            .scene(.presentNodes(next.nodes)),
+            .persist
         ])
-        let nodes = effects.presentedNodes ?? []
-        #expect(nodes.count == 5)
-        #expect(nodes.filter { $0 == .glowing }.count == 2)
-        #expect(nodes.filter { $0 == .lukewarm }.count == 2)
-        #expect(nodes.filter { $0 == .cold }.count == 1)
     }
 
     // MARK: - Regel 3
 
-    @Test("Regel 3: das erste Licht auf einem singenden Knoten lässt ein zweites folgen")
-    func regel3_erstesLichtGlowing() {
-        let (next, effects) = reduce(PlayerState(phase: .nodes, lightsRemaining: 2), .lightPlaced(.glowing))
-        #expect(next.lightsRemaining == 1)
-        #expect(next.phase == .nodes)
-        #expect(effects.contains(.scene(.impact(.glowing))))
-        #expect(effects.contains(.scene(.showRoots(.strong))))
-        #expect(effects.contains(.scene(.presentLight)))
-        #expect(effects.contains(.scene(.presentSun)) == false)
-        #expect(next.progress["schnitt"]?.stage == .recognized)
+    @Test("Regel 3: eine unbekannte Knoten-ID ändert nichts")
+    func regel3_unbekannteID() {
+        let state = knotenZustand()
+        let (next, effects) = reduce(state, .lightPlaced(nodeID: 99))
+        #expect(next == state)
+        #expect(effects.isEmpty)
+
+        // Kontrolle: eine bekannte ID verändert sehr wohl etwas.
+        let (gesetzt, effekte) = reduce(state, .lightPlaced(nodeID: 0))
+        #expect(gesetzt != state)
+        #expect(effekte.isEmpty == false)
     }
 
-    @Test("Regel 3: das letzte Licht auf einem singenden Knoten holt die Sonne")
-    func regel3_letztesLichtGlowing() {
-        let (next, effects) = reduce(PlayerState(phase: .nodes, lightsRemaining: 1), .lightPlaced(.glowing))
-        #expect(next.lightsRemaining == 0)
-        #expect(next.phase == .roots)
-        #expect(effects.contains(.scene(.impact(.glowing))))
-        #expect(effects.contains(.scene(.showRoots(.strong))))
-        #expect(effects.contains(.scene(.presentSun)))
-        #expect(effects.contains(.scene(.presentLight)) == false)
-        #expect(next.progress["schnitt"]?.stage == .recognized)
+    @Test("Regel 3: ein bereits gesetzter Knoten ändert nichts")
+    func regel3_bereitsGesetzt() {
+        let state = knotenZustand(
+            lightsRemaining: 1,
+            litNodeIDs: [0],
+            placements: [.fixture(0, .glowing)],
+            nodeOutcomes: [.glowing]
+        )
+        let (next, effects) = reduce(state, .lightPlaced(nodeID: 0))
+        #expect(next == state)
+        #expect(effects.isEmpty)
+
+        // Kontrolle: der zweite singende Knoten ist noch frei.
+        let (gesetzt, effekte) = reduce(state, .lightPlaced(nodeID: 3))
+        #expect(gesetzt != state)
+        #expect(effekte.isEmpty == false)
     }
 
     // MARK: - Regel 4
 
-    @Test("Regel 4: das Lauwarme frisst das Licht und bekommt ein neues")
-    func regel4_lightPlacedLukewarm() {
-        let (next, effects) = reduce(PlayerState(phase: .nodes, lightsRemaining: 2), .lightPlaced(.lukewarm))
-        #expect(next.phase == .nodes)
-        #expect(next.lightsRemaining == 2)
-        #expect(effects == [.scene(.drainLight), .haptic(.drain), .sound(.lukewarm), .scene(.presentLight)])
-        #expect(next.nodeOutcomes == [.lukewarm])
-        #expect(next.progress["schnitt"]?.fallacyHits["lauwarm-lager"] == 1)
-    }
-
-    @Test("Regel 4: zweimal lauwarm zählt den Denkfehler zweimal")
-    func regel4_zweimalLauwarm() {
-        let (einmal, _) = reduce(PlayerState(phase: .nodes, lightsRemaining: 2), .lightPlaced(.lukewarm))
-        let (zweimal, _) = reduce(einmal, .lightPlaced(.lukewarm))
-        #expect(zweimal.nodeOutcomes == [.lukewarm, .lukewarm])
-        #expect(zweimal.progress["schnitt"]?.fallacyHits["lauwarm-lager"] == 2)
-        #expect(zweimal.lightsRemaining == 2)
+    @Test("Regel 4: das Licht auf einem singenden Knoten treibt starke Wurzeln")
+    func regel4_glowing() {
+        let (next, effects) = reduce(knotenZustand(), .lightPlaced(nodeID: 0))
+        #expect(next.lightsRemaining == 1)
+        #expect(next.litNodeIDs == [0])
+        #expect(next.nodeOutcomes == [.glowing])
+        #expect(next.placements.count == 1)
+        #expect(next.placements.first?.nodeID == 0)
+        #expect(next.placements.first?.kind == .glowing)
+        #expect(next.placements.first?.at == clock.now)
+        #expect(next.progress["schnitt"]?.stage == .recognized)
+        #expect(Array(effects.prefix(4)) == [
+            .scene(.impact(nodeID: 0)),
+            .haptic(.impact),
+            .sound(.node(.glowing)),
+            .scene(.showRoots(nodeID: 0, .strong))
+        ])
     }
 
     // MARK: - Regel 5
 
-    @Test("Regel 5: der brummende Knoten kostet nichts")
-    func regel5_lightPlacedCold() {
-        let (next, effects) = reduce(PlayerState(phase: .nodes, lightsRemaining: 2), .lightPlaced(.cold))
-        #expect(next.phase == .nodes)
-        #expect(next.lightsRemaining == 2)
-        #expect(effects == [.scene(.thud), .haptic(.tap), .sound(.cold)])
+    @Test("Regel 5: das Lauwarme frisst das Licht ersatzlos")
+    func regel5_lukewarm() {
+        let (next, effects) = reduce(knotenZustand(), .lightPlaced(nodeID: 1))
+        #expect(next.lightsRemaining == 1)
+        #expect(next.litNodeIDs == [1])
+        #expect(next.nodeOutcomes == [.lukewarm])
+        #expect(next.progress["schnitt"]?.fallacyHits["lauwarm-lager"] == 1)
+        #expect(Array(effects.prefix(4)) == [
+            .scene(.drainLight(nodeID: 1)),
+            .haptic(.drain),
+            .sound(.node(.lukewarm)),
+            .scene(.showRoots(nodeID: 1, .weak))
+        ])
+        #expect(effects.contains(.scene(.hintGlowing)) == false)
+    }
+
+    @Test("Regel 5: die zweite lauwarme Setzung zeigt auf das Glühende")
+    func regel5_zweitesLauwarmesHilft() {
+        let state = knotenZustand(
+            lightsRemaining: 1,
+            litNodeIDs: [1],
+            placements: [.fixture(1, .lukewarm)],
+            nodeOutcomes: [.lukewarm]
+        )
+        let (next, effects) = reduce(state, .lightPlaced(nodeID: 4))
+        #expect(next.lightsRemaining == 0)
+        #expect(next.progress["schnitt"]?.fallacyHits["lauwarm-lager"] == 2)
+        #expect(effects.contains(.scene(.hintGlowing)))
     }
 
     // MARK: - Regel 6
 
-    @Test("Regel 6: die halb gezogene Sonne meldet nur ihren Fortschritt")
-    func regel6_sonneHalb() {
-        let (next, effects) = reduce(PlayerState(phase: .roots, lightsRemaining: 0), .sunPulled(0.5))
-        #expect(next.phase == .roots)
-        #expect(effects.sunProgress == 0.5)
-        #expect(effects.contains(.scene(.dawn)) == false)
+    @Test("Regel 6: der brummende Knoten kostet kein Licht")
+    func regel6_cold() {
+        let state = knotenZustand()
+        let (next, effects) = reduce(state, .lightPlaced(nodeID: 2))
+        #expect(next.lightsRemaining == 2)
+        #expect(next.litNodeIDs.isEmpty)
+        #expect(next.nodeOutcomes == [.cold])
+        #expect(next.placements.count == 1)
+        #expect(effects == [
+            .scene(.thud(nodeID: 2)),
+            .haptic(.tap),
+            .sound(.node(.cold))
+        ])
     }
 
-    @Test("Regel 6: die ganz gezogene Sonne bringt den Durchbruch und das Onboarding")
-    func regel6_sonneGanz() {
-        let (next, effects) = reduce(PlayerState(phase: .roots, lightsRemaining: 0), .sunPulled(1.0))
-        #expect(next.phase == .onboardingPain)
-        let erwartet: [Effect] = [
-            .scene(.dawn), .scene(.breakthrough(.first)),
-            .haptic(.breakthrough), .sound(.breakthrough), .persist
-        ]
-        // Reihenfolge und Vollständigkeit; ein zusätzliches .sunProgress(1.0) ist erlaubt.
-        #expect(effects.filter { erwartet.contains($0) } == erwartet)
+    @Test("Regel 6: die zweite kalte Setzung zeigt auf das Glühende")
+    func regel6_zweitesKaltesHilft() {
+        let state = knotenZustand(placements: [.fixture(2, .cold)], nodeOutcomes: [.cold])
+        let (next, effects) = reduce(state, .lightPlaced(nodeID: 2))
+        #expect(next.placements.count == 2)
+        #expect(next.lightsRemaining == 2)
+        #expect(Array(effects.prefix(3)) == [
+            .scene(.thud(nodeID: 2)),
+            .haptic(.tap),
+            .sound(.node(.cold))
+        ])
+        #expect(effects.contains(.scene(.hintGlowing)))
     }
 
     // MARK: - Regel 7
 
-    @Test("Regel 7: die gewählten Kacheln färben das Licht")
-    func regel7_painSelected() {
-        let state = PlayerState(phase: .onboardingPain, lightsRemaining: 0)
-        let (next, effects) = reduce(state, .painSelected([.zuVielLauwarmes, .zeitWeg]))
-        #expect(next.pains == [.zuVielLauwarmes, .zeitWeg])
-        #expect(next.lightColorTile == .zuVielLauwarmes)
-        #expect(next.phase == .onboardingWhy)
-        #expect(effects == [.scene(.tintLight(.zuVielLauwarmes)), .haptic(.flip)])
+    @Test("Regel 7: solange ein Licht übrig ist, folgt ein neues Licht")
+    func regel7_naechstesLicht() {
+        let (next, effects) = reduce(knotenZustand(), .lightPlaced(nodeID: 0))
+        #expect(next.phase == .nodes)
+        #expect(effects.last == .scene(.presentLight))
+        #expect(effects.contains(.scene(.presentSun)) == false)
     }
 
-    @Test("Regel 7: eine leere Auswahl wird abgelehnt")
-    func regel7_leereAuswahl() {
-        let state = PlayerState(phase: .onboardingPain, lightsRemaining: 0)
-        let (next, effects) = reduce(state, .painSelected([]))
-        #expect(effects.rejectReason != nil)
-        #expect(next == state)
+    @Test("Regel 7: nach dem letzten Licht kommt die Sonne")
+    func regel7_letztesLicht() {
+        let state = knotenZustand(
+            lightsRemaining: 1,
+            litNodeIDs: [0],
+            placements: [.fixture(0, .glowing)],
+            nodeOutcomes: [.glowing]
+        )
+        let (next, effects) = reduce(state, .lightPlaced(nodeID: 3))
+        #expect(next.phase == .roots)
+        #expect(next.lightsRemaining == 0)
+        #expect(Array(effects.suffix(2)) == [.scene(.presentSun), .persist])
+        #expect(effects.contains(.scene(.presentLight)) == false)
+    }
+
+    @Test("Regel 7: nach dem kalten Knoten kommt kein neues Licht")
+    func regel7_keinLichtNachKalt() {
+        let state = knotenZustand()
+        let (_, kalt) = reduce(state, .lightPlaced(nodeID: 2))
+        #expect(kalt.contains(.scene(.presentLight)) == false)
+
+        // Kontrolle: nach einer Setzung, die ein Licht kostet, kommt sehr wohl eines nach.
+        let (_, gluehend) = reduce(state, .lightPlaced(nodeID: 0))
+        #expect(gluehend.contains(.scene(.presentLight)))
+    }
+
+    @Test("Regel 7: die vierte Setzung holt die Sonne, auch mit Lichtern im Rücken")
+    func regel7_vierteSetzung() {
+        let state = knotenZustand(
+            placements: [.fixture(2, .cold), .fixture(2, .cold), .fixture(2, .cold)],
+            nodeOutcomes: [.cold, .cold, .cold]
+        )
+        let (next, effects) = reduce(state, .lightPlaced(nodeID: 2))
+        #expect(next.placements.count == 4)
+        #expect(next.lightsRemaining == 2)
+        #expect(next.phase == .roots)
+        #expect(Array(effects.suffix(2)) == [.scene(.presentSun), .persist])
     }
 
     // MARK: - Regel 8
 
-    @Test("Regel 8: das Warum wird als eigener Satz gespeichert")
-    func regel8_whyEntered() {
-        let state = PlayerState(phase: .onboardingWhy, lightsRemaining: 0, pains: [.zeitWeg])
-        let (next, _) = reduce(state, .whyEntered("Mehr Zeit für meine Kinder"))
+    @Test("Regel 8: die halb gezogene Sonne meldet ihren Fortschritt")
+    func regel8_sonneHalb() {
+        let (next, effects) = reduce(wurzelZustand(), .sunPulled(0.5))
+        #expect(next.phase == .roots)
+        #expect(next.sunProgress == 0.5)
+        #expect(effects == [.scene(.sunProgress(0.5))])
+    }
+
+    @Test("Regel 8: die Sonne fällt nie zurück")
+    func regel8_monoton() {
+        var state = wurzelZustand()
+        state.sunProgress = 0.7
+        let (next, effects) = reduce(state, .sunPulled(0.3))
+        #expect(next.sunProgress == 0.7)
+        #expect(effects == [.scene(.sunProgress(0.7))])
+    }
+
+    @Test("Regel 8: über 1 wird gekappt")
+    func regel8_gekappt() {
+        let (next, effects) = reduce(wurzelZustand(), .sunPulled(1.5))
+        #expect(next.sunProgress == 1.0)
+        #expect(effects.first == .scene(.sunProgress(1.0)))
+    }
+
+    @Test("Regel 8: zwei starke Wurzeln geben den vollen Durchbruch")
+    func regel8_durchbruchVoll() {
+        let state = wurzelZustand(
+            litNodeIDs: [0, 3],
+            placements: [.fixture(0, .glowing), .fixture(3, .glowing)],
+            nodeOutcomes: [.glowing, .glowing]
+        )
+        let (next, effects) = reduce(state, .sunPulled(1.0))
+        #expect(next.phase == .breakthrough)
+        #expect(effects.breakthroughTier == .full)
+        let erwartet: [Effect] = [
+            .scene(.dawn), .scene(.breakthrough(.full)),
+            .haptic(.breakthrough), .sound(.breakthrough), .persist
+        ]
+        #expect(effects.filter { erwartet.contains($0) } == erwartet)
+        #expect(effects.first == .scene(.sunProgress(1.0)))
+    }
+
+    @Test("Regel 8: eine starke Wurzel gibt den halben Durchbruch")
+    func regel8_durchbruchHalb() {
+        let state = wurzelZustand(
+            litNodeIDs: [0, 1],
+            placements: [.fixture(0, .glowing), .fixture(1, .lukewarm)],
+            nodeOutcomes: [.glowing, .lukewarm]
+        )
+        let (next, effects) = reduce(state, .sunPulled(1.0))
+        #expect(next.phase == .breakthrough)
+        #expect(effects.breakthroughTier == .half)
+    }
+
+    @Test("Regel 8: ohne starke Wurzel bleibt der Durchbruch dünn")
+    func regel8_durchbruchDuenn() {
+        let state = wurzelZustand(
+            litNodeIDs: [1, 4],
+            placements: [.fixture(1, .lukewarm), .fixture(4, .lukewarm)],
+            nodeOutcomes: [.lukewarm, .lukewarm]
+        )
+        let (next, effects) = reduce(state, .sunPulled(1.0))
+        #expect(next.phase == .breakthrough)
+        #expect(effects.breakthroughTier == .thin)
+    }
+
+    // MARK: - Regel 9
+
+    @Test("Regel 9: erst das Ende der Durchbruch-Animation öffnet das Onboarding")
+    func regel9_breakthroughFinished() {
+        var state = wurzelZustand()
+        state.phase = .breakthrough
+        state.sunProgress = 1
+        let (next, effects) = reduce(state, .breakthroughFinished)
+        #expect(next.phase == .onboardingPain)
+        #expect(effects == [.persist])
+    }
+
+    // MARK: - Regel 10
+
+    @Test("Regel 10: die gewählten Kacheln färben das Licht")
+    func regel10_painSelected() {
+        var state = wurzelZustand()
+        state.phase = .onboardingPain
+        let (next, effects) = reduce(state, .painSelected([.zuVielLauwarmes, .zeitWeg]))
+        #expect(next.pains == [.zuVielLauwarmes, .zeitWeg])
+        #expect(next.lightColorTile == .zuVielLauwarmes)
+        #expect(next.phase == .onboardingWhy)
+        #expect(effects == [.scene(.tintLight(.zuVielLauwarmes)), .haptic(.flip), .persist])
+    }
+
+    @Test("Regel 10: die Kacheln sind überspringbar")
+    func regel10_ueberspringbar() {
+        var state = wurzelZustand()
+        state.phase = .onboardingPain
+        let (next, effects) = reduce(state, .painSelected([]))
+        #expect(next.pains.isEmpty)
+        #expect(next.lightColorTile == nil)
+        #expect(next.phase == .onboardingWhy)
+        #expect(effects == [.scene(.tintLight(nil)), .haptic(.flip), .persist])
+        #expect(effects.rejectReason == nil)
+    }
+
+    // MARK: - Regel 11
+
+    @Test("Regel 11: das Warum wird als eigener Satz gespeichert")
+    func regel11_whyEntered() {
+        var state = wurzelZustand()
+        state.phase = .onboardingWhy
+        let (next, effects) = reduce(state, .whyEntered("Mehr Zeit für meine Kinder"))
         #expect(next.phase == .intention)
         #expect(next.why == "Mehr Zeit für meine Kinder")
         #expect(next.ownSentences.count == 1)
         #expect(next.ownSentences.first?.context == .why)
         #expect(next.ownSentences.first?.text == "Mehr Zeit für meine Kinder")
         #expect(next.ownSentences.first?.createdAt == clock.now)
+        #expect(effects.contains(.persist))
     }
 
-    @Test("Regel 8: ohne Warum entsteht kein Satz, die Phase wechselt trotzdem")
-    func regel8_whyUebersprungen() {
-        let state = PlayerState(phase: .onboardingWhy, lightsRemaining: 0, pains: [.zeitWeg])
+    @Test("Regel 11: ohne Warum entsteht kein Satz, die Phase wechselt trotzdem")
+    func regel11_whyUebersprungen() {
+        var state = wurzelZustand()
+        state.phase = .onboardingWhy
         let (uebersprungen, _) = reduce(state, .whyEntered(nil))
         #expect(uebersprungen.phase == .intention)
         #expect(uebersprungen.ownSentences.isEmpty)
@@ -186,74 +400,88 @@ struct GameEngineTests {
         #expect(leer.ownSentences.isEmpty)
     }
 
-    // MARK: - Regel 9
+    // MARK: - Regel 12
 
-    @Test("Regel 9: die Absicht bekommt eine Frist aus dem Beweisfenster")
-    func regel9_intentionChosen() {
-        let state = PlayerState(phase: .intention, lightsRemaining: 0)
-        let absicht = Intention.fixture(dueBy: Date(timeIntervalSince1970: 0))
+    @Test("Regel 12: die Absicht setzt die Rückkehrzeit und die Erinnerung")
+    func regel12_intentionChosen() {
+        var state = wurzelZustand()
+        state.phase = .intention
+        let absicht = Intention.fixture(earliestProofAt: clock.now.addingTimeInterval(600))
         let (next, effects) = reduce(state, .intentionChosen(absicht))
         #expect(next.phase == .closed)
-        #expect(next.intention?.id == "i1")
-        #expect(next.intention?.text == absicht.text)
-        #expect(next.intention?.dueBy == clock.now.addingTimeInterval(T.day))
-        #expect(effects.contains(.persist))
+        #expect(next.intention == absicht)
+        #expect(next.readyAt == absicht.earliestProofAt)
+        #expect(effects == [
+            .scheduleReminder(at: absicht.earliestProofAt, text: absicht.text),
+            .persist
+        ])
     }
 
-    // MARK: - Regel 10
+    // MARK: - Regel 13
 
-    @Test("Regel 10: closeForToday setzt die Rückkehrzeit und öffnet das Wurzelfenster")
-    func regel10_closeForToday() {
-        let state = PlayerState(phase: .closed, lightsRemaining: 0, intention: .fixture())
+    @Test("Regel 13: closeForToday öffnet das Wurzelfenster")
+    func regel13_closeForToday() {
+        var state = wurzelZustand()
+        state.phase = .closed
+        state.intention = .fixture()
+        state.readyAt = clock.now.addingTimeInterval(600)
         let (next, effects) = reduce(state, .closeForToday)
         #expect(next.phase == .waiting)
         #expect(next.closedAt == clock.now)
-        #expect(next.readyAt == clock.now.addingTimeInterval(600))
+        #expect(next.readyAt == state.readyAt)
         #expect(effects == [.scene(.rootWindow(visible: true)), .persist])
     }
 
-    @Test("Regel 10: im Demo-Modus ist die Rückkehrzeit 30 Sekunden entfernt")
-    func regel10_closeForTodayDemo() {
-        let state = PlayerState(phase: .closed, lightsRemaining: 0, intention: .fixture())
-        let (next, _) = reduce(state, .closeForToday, rules: .demo)
-        #expect(next.readyAt == clock.now.addingTimeInterval(30))
+    @Test("Regel 13: appOpened in closed wirkt wie closeForToday")
+    func regel13_appOpenedInClosed() {
+        var state = wurzelZustand()
+        state.phase = .closed
+        state.intention = .fixture()
+        state.readyAt = clock.now.addingTimeInterval(600)
+        let (next, effects) = reduce(state, .appOpened)
+        #expect(next.phase == .waiting)
+        #expect(next.closedAt == clock.now)
+        #expect(effects.beginntMitRestore)
+        #expect(effects.nachRestore == [.scene(.rootWindow(visible: true)), .persist])
     }
 
-    // MARK: - Regel 11
+    // MARK: - Regel 14
 
-    @Test("Regel 11: vor readyAt heißt zurückkommen weiter warten")
-    func regel11_zuFrueh() {
+    @Test("Regel 14: vor readyAt heißt zurückkommen weiter warten")
+    func regel14_zuFrueh() {
         let state = wartend(readyIn: T.minute)
         let (next, effects) = reduce(state, .appOpened)
         #expect(next.phase == .waiting)
+        #expect(effects.beginntMitRestore)
         #expect(effects.rootWindowVisible == true)
         #expect(next.lastOpenedAt == clock.now)
-        #expect(next.readyAt == state.readyAt)
     }
 
-    @Test("Regel 11: genau ab readyAt wird der Beweis möglich")
-    func regel11_genauAbReadyAt() {
-        let state = wartend(readyIn: 0)
-        let (next, effects) = reduce(state, .appOpened)
+    @Test("Regel 14: genau ab readyAt wird der Beweis möglich")
+    func regel14_genauAbReadyAt() {
+        let (next, effects) = reduce(wartend(readyIn: 0), .appOpened)
         #expect(next.phase == .proof)
         #expect(effects.rootWindowVisible == false)
     }
 
-    @Test("Regel 11: nach readyAt wird der Beweis möglich")
-    func regel11_nachAblauf() {
-        let state = wartend(readyIn: -T.minute)
-        let (next, effects) = reduce(state, .appOpened)
+    @Test("Regel 14: nach readyAt wird der Beweis möglich")
+    func regel14_nachAblauf() {
+        let (next, effects) = reduce(wartend(readyIn: -T.minute), .appOpened)
         #expect(next.phase == .proof)
+        #expect(effects.beginntMitRestore)
         #expect(effects.rootWindowVisible == false)
     }
 
-    // MARK: - Regel 12
+    // MARK: - Regel 15
 
-    @Test("Regel 12: ein gültiger Beweis bringt den Tag und die Stufe Angewendet")
-    func regel12_beweisAngenommen() {
-        let (next, effects) = reduce(beweisbereit(), .proofSubmitted(Self.guterBeweis))
+    @Test("Regel 15: ein gültiger Beweis bringt den Tag und die Stufe Angewendet")
+    func regel15_beweisAngenommen() {
+        var state = beweisbereit()
+        state.sunProgress = 1
+        let (next, effects) = reduce(state, .proofSubmitted(Self.guterBeweis))
         #expect(next.phase == .dawnProof)
         #expect(next.days == 1)
+        #expect(next.sunProgress == 0)
         #expect(next.progress["schnitt"]?.stage == .applied)
         #expect(next.progress["schnitt"]?.proofs.count == 1)
         #expect(next.progress["schnitt"]?.proofs.first?.text == Self.guterBeweis)
@@ -261,8 +489,8 @@ struct GameEngineTests {
         #expect(effects == [.scene(.presentSun), .persist])
     }
 
-    @Test("Regel 12: ein zu kurzer Beweis wird ohne Vorwurf abgelehnt")
-    func regel12_beweisAbgelehnt() {
+    @Test("Regel 15: ein zu kurzer Beweis wird ohne Vorwurf abgelehnt")
+    func regel15_beweisAbgelehnt() {
         let state = beweisbereit()
         let (next, effects) = reduce(state, .proofSubmitted("kurz"))
         #expect(next.phase == .proof)
@@ -271,50 +499,63 @@ struct GameEngineTests {
         #expect(effects.rejectReason != nil)
     }
 
-    @Test("Regel 12: die abgeschriebene Anleitung wird abgelehnt")
-    func regel12_abschriftAbgelehnt() {
+    @Test("Regel 15: die abgeschriebene Anleitung wird abgelehnt")
+    func regel15_abschriftAbgelehnt() {
         let (next, effects) = reduce(beweisbereit(), .proofSubmitted(ProofValidatorTests.anleitung))
         #expect(next.phase == .proof)
         #expect(next.days == 0)
         #expect(effects.rejectReason != nil)
     }
 
-    // MARK: - Regel 13
+    // MARK: - Regel 16
 
-    @Test("Regel 13: die zweite Sonne bringt den größeren Durchbruch")
-    func regel13_zweiterDurchbruch() {
+    @Test("Regel 16: die zweite Sonne bringt den größeren Durchbruch")
+    func regel16_zweiterDurchbruch() {
         var state = beweisbereit()
         state.phase = .dawnProof
         state.days = 1
         let (next, effects) = reduce(state, .sunPulled(1.0))
         #expect(next.phase == .cost)
-        #expect(effects == [
+        #expect(next.sunProgress == 1.0)
+        let erwartet: [Effect] = [
             .scene(.dawn), .scene(.breakthrough(.second)), .scene(.fogLevel(1)),
             .haptic(.breakthrough), .sound(.breakthrough), .persist
-        ])
+        ]
+        #expect(effects.filter { erwartet.contains($0) } == erwartet)
+        #expect(effects.first == .scene(.sunProgress(1.0)))
     }
 
-    // MARK: - Regel 14
+    @Test("Regel 16: auch die zweite Sonne läuft nur vorwärts")
+    func regel16_monoton() {
+        var state = beweisbereit()
+        state.phase = .dawnProof
+        state.sunProgress = 0.6
+        let (next, effects) = reduce(state, .sunPulled(0.2))
+        #expect(next.phase == .dawnProof)
+        #expect(next.sunProgress == 0.6)
+        #expect(effects == [.scene(.sunProgress(0.6))])
+    }
 
-    @Test("Regel 14: die Kosten-Antwort führt zum Befund")
-    func regel14_costEntered() {
+    // MARK: - Regel 17
+
+    @Test("Regel 17: die Kosten-Antwort führt zum Satz über dich")
+    func regel17_costEntered() {
         var state = beweisbereit()
         state.phase = .cost
         state.days = 1
-        state.nodeOutcomes = [.lukewarm, .glowing]
         let (next, effects) = reduce(state, .costEntered("Zwei Minuten Mut und eine unangenehme Nachricht"))
         #expect(next.phase == .befund)
         #expect(next.ownSentences.count == state.ownSentences.count + 1)
         #expect(next.ownSentences.last?.context == .cost)
         #expect(next.ownSentences.last?.text == "Zwei Minuten Mut und eine unangenehme Nachricht")
         #expect(next.befund != nil)
+        #expect(effects.count == 2)
         #expect(effects.shownBefund == next.befund)
         #expect(effects.contains(.persist))
-        #expect(effects.count == 2)
     }
 
-    @Test("Regel 14: ohne Kosten-Antwort entsteht kein Satz, der Befund kommt trotzdem")
-    func regel14_kostenUebersprungen() {
+    @Test("Regel 17: ohne Kosten-Antwort entsteht kein Satz, der Befund kommt trotzdem")
+    func regel17_kostenUebersprungen() {
         var state = beweisbereit()
         state.phase = .cost
         state.days = 1
@@ -324,58 +565,123 @@ struct GameEngineTests {
         #expect(effects.shownBefund != nil)
     }
 
-    @Test("Regel 14b: der angenommene Befund führt in die Ruhe")
-    func regel14b_befundAngenommen() {
-        var state = beweisbereit()
-        state.phase = .befund
-        state.befund = Befund(sentence: "Dein Muster", evidence: ["lauwarm: 1"], principleID: "schnitt")
-        let (next, effects) = reduce(state, .befundAnswered(accepted: true))
+    // MARK: - Regel 18
+
+    @Test("Regel 18: „Stimmt“ beendet den Abend")
+    func regel18_angenommen() {
+        let (next, effects) = reduce(befundZustand(), .befundAnswered(accepted: true))
         #expect(next.phase == .idle)
         #expect(next.befundAccepted == true)
+        #expect(next.befundAlternativeShown == false)
         #expect(effects == [.persist])
     }
 
-    @Test("Regel 14b: ein abgelehnter Befund kostet nichts")
-    func regel14b_befundAbgelehnt() {
-        var state = beweisbereit()
-        state.phase = .befund
-        state.days = 1
-        state.befund = Befund(sentence: "Dein Muster", evidence: ["lauwarm: 1"], principleID: "schnitt")
+    @Test("Regel 18: „Stimmt nicht“ liefert einmal den anderen Satz")
+    func regel18_abgelehntZeigtAlternative() {
+        let state = befundZustand()
+        let (next, effects) = reduce(state, .befundAnswered(accepted: false))
+        #expect(next.phase == .befund)
+        #expect(next.befundAlternativeShown == true)
+        #expect(next.befundAccepted == nil)
+        #expect(effects.shownBefund?.sentence == state.befund?.alternative)
+    }
+
+    @Test("Regel 18: nach der Alternative ist Schluss")
+    func regel18_nachDerAlternative() {
+        var state = befundZustand()
+        state.befundAlternativeShown = true
         let (next, effects) = reduce(state, .befundAnswered(accepted: false))
         #expect(next.phase == .idle)
         #expect(next.befundAccepted == false)
-        #expect(next.days == 1)
-        #expect(next.progress == state.progress)
         #expect(effects == [.persist])
     }
 
-    // MARK: - Regel 15
+    // MARK: - Regel 19
 
-    @Test("Regel 15: beim nächsten Öffnen kommt zuerst der eigene Satz")
-    func regel15_eigenerSatz() {
+    @Test("Regel 19: beim nächsten Öffnen kommt zuerst der eigene Satz")
+    func regel19_eigenerSatz() {
         let alt = OwnSentence.fixture(id: "s1", createdAt: clock.now.addingTimeInterval(-3 * T.day))
-        let state = PlayerState(phase: .idle, lightsRemaining: 0, days: 1, ownSentences: [alt])
+        var state = befundZustand()
+        state.phase = .idle
+        state.days = 1
+        state.ownSentences = [alt]
         let (next, effects) = reduce(state, .appOpened)
         #expect(next.phase == .idle)
+        #expect(effects.beginntMitRestore)
         #expect(effects.shownOwnSentence?.id == "s1")
+        #expect(next.lastShownSentenceID == "s1")
         #expect(next.lastOpenedAt == clock.now)
     }
 
-    @Test("Regel 15: ohne passenden Satz passiert beim Öffnen nichts")
-    func regel15_keinSatz() {
+    @Test("Regel 19: ohne passenden Satz bleibt es bei der Wiederherstellung")
+    func regel19_keinSatz() {
         let frisch = OwnSentence.fixture(id: "s1", createdAt: clock.now.addingTimeInterval(-T.minute))
-        let state = PlayerState(phase: .idle, lightsRemaining: 0, days: 1, ownSentences: [frisch])
+        var state = befundZustand()
+        state.phase = .idle
+        state.days = 1
+        state.ownSentences = [frisch]
         let (next, effects) = reduce(state, .appOpened)
-        #expect(effects.isEmpty)
-        // Kontrolle: appOpened stempelt trotzdem die Zeit.
-        #expect(next.lastOpenedAt == clock.now)
-        #expect(state.lastOpenedAt != clock.now)
+        #expect(effects.nachRestore.isEmpty)
+        #expect(effects.beginntMitRestore)
+        #expect(next.lastShownSentenceID == nil)
     }
 
-    // MARK: - Regel 16
+    @Test("Regel 19: der zuletzt gezeigte Satz wird beim nächsten Mal übersprungen")
+    func regel19_lastShownWirdBeachtet() {
+        var state = befundZustand()
+        state.phase = .idle
+        state.days = 1
+        state.ownSentences = [
+            OwnSentence.fixture(id: "s1", createdAt: clock.now.addingTimeInterval(-3 * T.day)),
+            OwnSentence.fixture(id: "s2", text: "Zwei Minuten Mut.", createdAt: clock.now.addingTimeInterval(-2 * T.day), context: .cost)
+        ]
+        state.lastShownSentenceID = "s1"
+        let (next, effects) = reduce(state, .appOpened)
+        #expect(effects.shownOwnSentence?.id == "s2")
+        #expect(next.lastShownSentenceID == "s2")
+    }
 
-    @Test("Regel 16: eine Aktion in der falschen Phase ändert nichts")
-    func regel16_unbekannteAktion() {
+    @Test("Der weggewischte Satz kostet nur einen Speichervorgang")
+    func dismissOwnSentence() {
+        var state = befundZustand()
+        state.phase = .idle
+        state.days = 1
+        state.lastShownSentenceID = "s1"
+        let (next, effects) = reduce(state, .dismissOwnSentence)
+        #expect(next == state)
+        #expect(effects == [.persist])
+    }
+
+    // MARK: - Regel 20
+
+    @Test("Regel 20: reset beginnt die Nacht neu")
+    func regel20_reset() {
+        var state = beweisbereit()
+        state.phase = .idle
+        state.days = 3
+        let (next, effects) = reduce(state, .reset)
+        #expect(next == GameEngine.initial(clock: clock, rules: .standard))
+        #expect(next.phase == .firstLight)
+        #expect(next.days == 0)
+        #expect(next.nodes.isEmpty)
+        #expect(next.sunProgress == 0)
+        #expect(effects.count == 2)
+        #expect(effects.beginntMitRestore)
+        #expect(effects.last == .persist)
+    }
+
+    @Test("Regel 20: reset wirkt auch mitten im Spiel")
+    func regel20_resetMittendrin() {
+        let (next, effects) = reduce(knotenZustand(), .reset)
+        #expect(next.phase == .firstLight)
+        #expect(next.nodes.isEmpty)
+        #expect(effects.beginntMitRestore)
+    }
+
+    // MARK: - Regel 21
+
+    @Test("Regel 21: eine Aktion in der falschen Phase ändert nichts")
+    func regel21_unbekannteAktion() {
         let state = PlayerState(phase: .firstLight)
         let (unveraendert, keineEffekte) = reduce(state, .costEntered("zu früh"))
         #expect(unveraendert == state)
@@ -387,30 +693,29 @@ struct GameEngineTests {
         #expect(effekte.isEmpty == false)
     }
 
-    @Test("Regel 16: auch der Beweis in der Wartephase prallt ab")
-    func regel16_beweisWaehrendDerSperre() {
+    @Test("Regel 21: auch der Beweis in der Wartephase prallt ab")
+    func regel21_beweisWaehrendDerSperre() {
         let state = wartend(readyIn: 5 * T.minute)
         let (next, effects) = reduce(state, .proofSubmitted(Self.guterBeweis))
         #expect(next == state)
         #expect(effects.isEmpty)
 
-        // Kontrolle: appOpened ist in dieser Phase definiert und verändert etwas.
+        // Kontrolle: appOpened ist in dieser Phase definiert.
         let (geoeffnet, effekte) = reduce(state, .appOpened)
         #expect(geoeffnet != state)
         #expect(effekte.isEmpty == false)
     }
 
-    // MARK: - Regel 17
+    // MARK: - Regel 22
 
-    @Test("Regel 17: ein zweiter Beweis im selben Fenster bringt keinen zweiten Tag")
-    func regel17_zweiterBeweisImFenster() {
+    @Test("Regel 22: ein zweiter Beweis im selben Fenster bringt keinen zweiten Tag")
+    func regel22_zweiterBeweisImFenster() {
         var state = beweisbereit()
-        let ersterBeweis = Proof.fixture(submittedAt: clock.now.addingTimeInterval(-2 * T.hour))
         state.progress["schnitt"] = PrincipleProgress(
             id: "schnitt",
             stage: .applied,
             stageEnteredAt: clock.now.addingTimeInterval(-2 * T.hour),
-            proofs: [ersterBeweis]
+            proofs: [Proof.fixture(submittedAt: clock.now.addingTimeInterval(-2 * T.hour))]
         )
         state.days = 1
 
@@ -429,77 +734,78 @@ struct GameEngineTests {
 
         var state = GameEngine.initial(clock: clock, rules: rules)
         #expect(state.phase == .firstLight)
-        #expect(state.days == 0)
         #expect(state.lightsRemaining == 2)
+        #expect(state.days == 0)
 
         // Licht in den Nebel
         (state, effects) = reduce(state, .lightDropped, rules: rules)
         #expect(state.phase == .nodes)
-        #expect(effects.presentedNodes?.count == 5)
+        #expect(state.nodes.count == 5)
 
-        // Das Lauwarme frisst das Licht — und ersetzt es
-        (state, effects) = reduce(state, .lightPlaced(.lukewarm), rules: rules)
-        #expect(state.phase == .nodes)
-        #expect(state.lightsRemaining == 2)
-        #expect(effects.contains(.scene(.drainLight)))
-        #expect(effects.contains(.scene(.presentLight)))
-        #expect(state.nodeOutcomes == [.lukewarm])
-
-        // Erstes Licht auf einen singenden Knoten: ein zweites folgt
-        (state, effects) = reduce(state, .lightPlaced(.glowing), rules: rules)
+        // Das Lauwarme frisst das erste Licht — ersatzlos
+        let lauwarm = try #require(state.freierKnoten(.lukewarm))
+        (state, effects) = reduce(state, .lightPlaced(nodeID: lauwarm.id), rules: rules)
         #expect(state.phase == .nodes)
         #expect(state.lightsRemaining == 1)
-        #expect(effects.contains(.scene(.showRoots(.strong))))
-        #expect(effects.contains(.scene(.presentLight)))
-        #expect(state.progress["schnitt"]?.stage == .recognized)
+        #expect(effects.contains(.scene(.drainLight(nodeID: lauwarm.id))))
+        #expect(effects.last == .scene(.presentLight))
 
         // Der kalte Knoten kostet nichts
-        (state, effects) = reduce(state, .lightPlaced(.cold), rules: rules)
-        #expect(state.phase == .nodes)
+        let kalt = try #require(state.freierKnoten(.cold))
+        (state, effects) = reduce(state, .lightPlaced(nodeID: kalt.id), rules: rules)
         #expect(state.lightsRemaining == 1)
-        #expect(effects == [.scene(.thud), .haptic(.tap), .sound(.cold)])
+        #expect(effects == [.scene(.thud(nodeID: kalt.id)), .haptic(.tap), .sound(.node(.cold))])
 
-        // Zweites Licht: jetzt kommt die Sonne
-        (state, effects) = reduce(state, .lightPlaced(.glowing), rules: rules)
+        // Das zweite Licht auf einen singenden Knoten: die Sonne kommt
+        let gluehend = try #require(state.freierKnoten(.glowing))
+        (state, effects) = reduce(state, .lightPlaced(nodeID: gluehend.id), rules: rules)
         #expect(state.phase == .roots)
         #expect(state.lightsRemaining == 0)
-        #expect(effects.contains(.scene(.presentSun)))
+        #expect(state.progress["schnitt"]?.stage == .recognized)
+        #expect(Array(effects.suffix(2)) == [.scene(.presentSun), .persist])
 
-        // Sonne halb, dann ganz
+        // Sonne halb, dann ganz — ein Treffer, also halber Durchbruch
         (state, effects) = reduce(state, .sunPulled(0.5), rules: rules)
-        #expect(state.phase == .roots)
-        #expect(effects.sunProgress == 0.5)
+        #expect(state.sunProgress == 0.5)
 
         (state, effects) = reduce(state, .sunPulled(1.0), rules: rules)
+        #expect(state.phase == .breakthrough)
+        #expect(effects.breakthroughTier == .half)
+
+        (state, effects) = reduce(state, .breakthroughFinished, rules: rules)
         #expect(state.phase == .onboardingPain)
-        #expect(effects.contains(.scene(.breakthrough(.first))))
-        #expect(state.days == 0)
+        #expect(effects == [.persist])
 
         // Onboarding
         (state, effects) = reduce(state, .painSelected([.zuVielLauwarmes, .zeitWeg]), rules: rules)
         #expect(state.phase == .onboardingWhy)
         #expect(state.lightColorTile == .zuVielLauwarmes)
-        #expect(effects.contains(.scene(.tintLight(.zuVielLauwarmes))))
 
         (state, effects) = reduce(state, .whyEntered("Mehr Zeit für meine Kinder"), rules: rules)
         #expect(state.phase == .intention)
         #expect(state.ownSentences.count == 1)
 
-        (state, effects) = reduce(state, .intentionChosen(.fixture()), rules: rules)
+        let absicht = Intention.fixture(
+            createdAt: clock.now,
+            earliestProofAt: clock.now.addingTimeInterval(600),
+            dueBy: clock.now.addingTimeInterval(600 + T.day)
+        )
+        (state, effects) = reduce(state, .intentionChosen(absicht), rules: rules)
         #expect(state.phase == .closed)
-        #expect(state.intention?.dueBy == clock.now.addingTimeInterval(T.day))
+        #expect(state.readyAt == absicht.earliestProofAt)
+        #expect(effects.reminder?.at == absicht.earliestProofAt)
+        #expect(effects.reminder?.text == absicht.text)
 
-        let geschlossenUm = clock.now
         (state, effects) = reduce(state, .closeForToday, rules: rules)
         #expect(state.phase == .waiting)
-        #expect(state.closedAt == geschlossenUm)
-        #expect(state.readyAt == geschlossenUm.addingTimeInterval(600))
+        #expect(state.closedAt == clock.now)
         #expect(effects == [.scene(.rootWindow(visible: true)), .persist])
 
         // Zu früh zurück
         clock.advance(by: 4 * T.minute)
         (state, effects) = reduce(state, .appOpened, rules: rules)
         #expect(state.phase == .waiting)
+        #expect(effects.beginntMitRestore)
         #expect(effects.rootWindowVisible == true)
         #expect(state.days == 0)
 
@@ -519,22 +825,24 @@ struct GameEngineTests {
         (state, effects) = reduce(state, .proofSubmitted(Self.guterBeweis), rules: rules)
         #expect(state.phase == .dawnProof)
         #expect(state.days == 1)
+        #expect(state.sunProgress == 0)
         #expect(state.progress["schnitt"]?.stage == .applied)
         #expect(effects == [.scene(.presentSun), .persist])
 
         // Zweiter Durchbruch
         (state, effects) = reduce(state, .sunPulled(1.0), rules: rules)
         #expect(state.phase == .cost)
-        #expect(effects.contains(.scene(.breakthrough(.second))))
+        #expect(effects.breakthroughTier == .second)
         #expect(effects.contains(.scene(.fogLevel(1))))
 
-        // Kosten und Befund
+        // Kosten und der Satz über dich
         (state, effects) = reduce(state, .costEntered("Zwei Minuten Mut und eine unangenehme Nachricht"), rules: rules)
         #expect(state.phase == .befund)
         #expect(state.ownSentences.count == 2)
         #expect(effects.shownBefund != nil)
         #expect(state.befund?.principleID == "schnitt")
-        #expect(state.befund?.sentence == BefundGeneratorTests.lauwarmSatz)
+        // Kachel „Zu viel Lauwarmes" plus eine lauwarme Setzung → Fall F1.
+        #expect(state.befund?.sentence.contains("1-mal") == true)
 
         (state, effects) = reduce(state, .befundAnswered(accepted: true), rules: rules)
         #expect(state.phase == .idle)
@@ -546,6 +854,7 @@ struct GameEngineTests {
         (state, effects) = reduce(state, .appOpened, rules: rules)
         #expect(state.phase == .idle)
         #expect(state.days == 1)
+        #expect(effects.beginntMitRestore)
         #expect(effects.shownOwnSentence?.context == .why)
         #expect(effects.shownOwnSentence?.text == "Mehr Zeit für meine Kinder")
     }
@@ -556,34 +865,38 @@ struct GameEngineTests {
         var effects: [Effect] = []
 
         var state = GameEngine.initial(clock: clock, rules: rules)
-        #expect(state.phase == .firstLight)
         #expect(state.lightsRemaining == 2)
 
         (state, _) = reduce(state, .lightDropped, rules: rules)
-        (state, _) = reduce(state, .lightPlaced(.lukewarm), rules: rules)
-        #expect(state.lightsRemaining == 2)
-
-        (state, _) = reduce(state, .lightPlaced(.glowing), rules: rules)
+        let ersterGluehender = try #require(state.freierKnoten(.glowing))
+        (state, _) = reduce(state, .lightPlaced(nodeID: ersterGluehender.id), rules: rules)
         #expect(state.phase == .nodes)
         #expect(state.lightsRemaining == 1)
 
-        (state, _) = reduce(state, .lightPlaced(.glowing), rules: rules)
+        let zweiterGluehender = try #require(state.freierKnoten(.glowing))
+        (state, effects) = reduce(state, .lightPlaced(nodeID: zweiterGluehender.id), rules: rules)
         #expect(state.phase == .roots)
         #expect(state.lightsRemaining == 0)
 
-        (state, _) = reduce(state, .sunPulled(1.0), rules: rules)
-        #expect(state.phase == .onboardingPain)
+        (state, effects) = reduce(state, .sunPulled(1.0), rules: rules)
+        #expect(state.phase == .breakthrough)
+        #expect(effects.breakthroughTier == .full)
 
-        (state, _) = reduce(state, .painSelected([.zeitWeg]), rules: rules)
+        (state, _) = reduce(state, .breakthroughFinished, rules: rules)
+        (state, _) = reduce(state, .painSelected([]), rules: rules)
+        #expect(state.phase == .onboardingWhy)
+
         (state, _) = reduce(state, .whyEntered("Mehr Zeit für meine Kinder"), rules: rules)
-        (state, _) = reduce(state, .intentionChosen(.fixture()), rules: rules)
-        #expect(state.phase == .closed)
-        #expect(state.intention?.dueBy == clock.now.addingTimeInterval(600))
+        let absicht = Intention.fixture(
+            createdAt: clock.now,
+            earliestProofAt: clock.now.addingTimeInterval(30),
+            dueBy: clock.now.addingTimeInterval(30 + 600)
+        )
+        (state, _) = reduce(state, .intentionChosen(absicht), rules: rules)
+        #expect(state.readyAt == clock.now.addingTimeInterval(30))
 
-        let geschlossenUm = clock.now
         (state, _) = reduce(state, .closeForToday, rules: rules)
         #expect(state.phase == .waiting)
-        #expect(state.readyAt == geschlossenUm.addingTimeInterval(30))
 
         // 29 Sekunden sind zu früh
         clock.advance(by: 29)
@@ -605,7 +918,8 @@ struct GameEngineTests {
 
         (state, effects) = reduce(state, .costEntered("Zwei Minuten Mut"), rules: rules)
         #expect(state.phase == .befund)
-        #expect(effects.shownBefund != nil)
+        // Keine Kachel, kein Lauwarmes, kein Kaltes → Fall F4.
+        #expect(state.befund?.sentence.contains("Zwei Lichter, zwei Treffer") == true)
 
         (state, _) = reduce(state, .befundAnswered(accepted: true), rules: rules)
         #expect(state.phase == .idle)
@@ -616,74 +930,166 @@ struct GameEngineTests {
         #expect(effects.shownOwnSentence?.text == "Mehr Zeit für meine Kinder")
     }
 
+    @Test("Lauwarm-Pfad: zwei lauwarme Setzungen kosten beide Lichter und den Durchbruch")
+    func lauwarmPfad() throws {
+        let rules = Rules.standard
+        var effects: [Effect] = []
+
+        var state = GameEngine.initial(clock: clock, rules: rules)
+        (state, _) = reduce(state, .lightDropped, rules: rules)
+
+        let erstes = try #require(state.freierKnoten(.lukewarm))
+        (state, effects) = reduce(state, .lightPlaced(nodeID: erstes.id), rules: rules)
+        #expect(state.lightsRemaining == 1)
+        #expect(state.phase == .nodes)
+        #expect(effects.contains(.scene(.hintGlowing)) == false)
+
+        let zweites = try #require(state.freierKnoten(.lukewarm))
+        (state, effects) = reduce(state, .lightPlaced(nodeID: zweites.id), rules: rules)
+        #expect(state.lightsRemaining == 0)
+        #expect(state.phase == .roots)
+        #expect(effects.contains(.scene(.hintGlowing)))
+        #expect(Array(effects.suffix(2)) == [.scene(.presentSun), .persist])
+        #expect(state.progress["schnitt"]?.fallacyHits["lauwarm-lager"] == 2)
+
+        (state, effects) = reduce(state, .sunPulled(1.0), rules: rules)
+        #expect(state.phase == .breakthrough)
+        #expect(effects.breakthroughTier == .thin)
+        #expect(effects.contains(.scene(.dawn)))
+    }
+
     // MARK: - Hilfen
 
-    /// Wartender Zustand: `readyAt` liegt `readyIn` Sekunden in der Zukunft
-    /// (negativ = die Sperre ist bereits abgelaufen).
-    func wartend(readyIn: TimeInterval) -> PlayerState {
+    func knotenZustand(
+        lightsRemaining: Int = 2,
+        litNodeIDs: [Int] = [],
+        placements: [Placement] = [],
+        nodeOutcomes: [NodeKind] = []
+    ) -> PlayerState {
         PlayerState(
-            phase: .waiting,
-            createdAt: clock.now.addingTimeInterval(-T.hour),
-            lastOpenedAt: clock.now.addingTimeInterval(-T.hour),
-            lightsRemaining: 0,
-            pains: [.zuVielLauwarmes],
-            why: "Mehr Zeit für meine Kinder",
-            intention: .fixture(dueBy: clock.now.addingTimeInterval(T.day)),
-            closedAt: clock.now.addingTimeInterval(readyIn - 600),
-            readyAt: clock.now.addingTimeInterval(readyIn),
-            nodeOutcomes: [.lukewarm, .glowing]
+            phase: .nodes,
+            createdAt: clock.now,
+            lastOpenedAt: clock.now,
+            lightsRemaining: lightsRemaining,
+            nodes: Self.layout,
+            litNodeIDs: litNodeIDs,
+            nodeOutcomes: nodeOutcomes,
+            placements: placements
         )
     }
 
-    /// Zustand kurz vor dem Beweis: Absicht gesetzt, Sperre abgelaufen.
+    func wurzelZustand(
+        litNodeIDs: [Int] = [0],
+        placements: [Placement] = [.fixture(0, .glowing)],
+        nodeOutcomes: [NodeKind] = [.glowing]
+    ) -> PlayerState {
+        PlayerState(
+            phase: .roots,
+            createdAt: clock.now,
+            lastOpenedAt: clock.now,
+            lightsRemaining: 0,
+            nodes: Self.layout,
+            litNodeIDs: litNodeIDs,
+            nodeOutcomes: nodeOutcomes,
+            placements: placements,
+            progress: ["schnitt": PrincipleProgress(id: "schnitt", stage: .recognized, stageEnteredAt: clock.now)]
+        )
+    }
+
+    /// Wartender Zustand: `readyAt` liegt `readyIn` Sekunden in der Zukunft
+    /// (negativ = die Tür ist bereits offen).
+    func wartend(readyIn: TimeInterval) -> PlayerState {
+        var state = beweisbereit()
+        state.phase = .waiting
+        state.closedAt = clock.now.addingTimeInterval(readyIn - 600)
+        state.readyAt = clock.now.addingTimeInterval(readyIn)
+        return state
+    }
+
+    /// Zustand kurz vor dem Beweis: Absicht gesetzt, Tür offen.
     func beweisbereit() -> PlayerState {
         PlayerState(
             phase: .proof,
             createdAt: clock.now.addingTimeInterval(-T.hour),
             lastOpenedAt: clock.now,
             lightsRemaining: 0,
+            nodes: Self.layout,
+            litNodeIDs: [0, 1],
+            nodeOutcomes: [.lukewarm, .glowing],
+            placements: [
+                .fixture(1, .lukewarm, at: clock.now.addingTimeInterval(-T.hour)),
+                .fixture(0, .glowing, at: clock.now.addingTimeInterval(-T.hour))
+            ],
+            sunProgress: 0,
             lightColorTile: .zuVielLauwarmes,
             pains: [.zuVielLauwarmes, .zeitWeg],
             why: "Mehr Zeit für meine Kinder",
-            intention: .fixture(dueBy: clock.now.addingTimeInterval(T.day)),
+            intention: .fixture(
+                createdAt: clock.now.addingTimeInterval(-T.hour),
+                earliestProofAt: clock.now.addingTimeInterval(-30 * T.minute),
+                dueBy: clock.now.addingTimeInterval(T.day)
+            ),
             closedAt: clock.now.addingTimeInterval(-T.hour),
             readyAt: clock.now.addingTimeInterval(-30 * T.minute),
             progress: [
                 "schnitt": PrincipleProgress(
                     id: "schnitt",
                     stage: .recognized,
-                    stageEnteredAt: clock.now.addingTimeInterval(-T.hour)
+                    stageEnteredAt: clock.now.addingTimeInterval(-T.hour),
+                    fallacyHits: ["lauwarm-lager": 1]
                 )
             ],
             days: 0,
             ownSentences: [
                 OwnSentence.fixture(id: "s1", createdAt: clock.now.addingTimeInterval(-T.hour))
-            ],
-            nodeOutcomes: [.lukewarm, .glowing]
+            ]
         )
+    }
+
+    func befundZustand() -> PlayerState {
+        var state = beweisbereit()
+        state.phase = .befund
+        state.days = 1
+        state.befund = Befund(
+            sentence: "Du hast ‚Zu viel Lauwarmes‘ angekreuzt — und heute Nacht trotzdem 1-mal Lauwarmes gefüttert.",
+            alternative: "Du hast das Lauwarme nach dem ersten Mal erkannt.",
+            evidence: ["lauwarm: 1", "lauwarm-lager"],
+            principleID: "schnitt"
+        )
+        return state
     }
 }
 
 @Suite("PainTile")
 struct PainTileTests {
 
-    @Test("„Zeit weg“ dreht sich zu „Deine Zeit gehört dir“")
-    func zeitWegDrehtSich() {
-        #expect(PainTile.zeitWeg.inverted == "Deine Zeit gehört dir")
-    }
-
-    @Test("Jede der sechs Kacheln hat ein Gegenteil")
-    func jedeKachelHatEinGegenteil() {
+    @Test("Jede der sechs Kacheln hat eine Beschriftung")
+    func beschriftungen() {
         #expect(PainTile.allCases.map(\.rawValue) == [
             "zeitWeg", "zuVielLauwarmes", "keinFortschritt",
             "geldReichtNicht", "immerErreichbar", "allesHaengtAnMir"
         ])
-        #expect(PainTile.allCases.allSatisfy { !$0.inverted.isEmpty })
-        #expect(PainTile.allCases.allSatisfy { $0.inverted != $0.rawValue })
+        #expect(PainTile.allCases.map(\.label) == [
+            "Zeit weg", "Zu viel Lauwarmes", "Kein Fortschritt",
+            "Geld reicht nicht", "Immer erreichbar", "Alles hängt an mir"
+        ])
+    }
+
+    @Test("Jede Kachel dreht sich in ihr Gegenteil")
+    func gegenteile() {
+        #expect(PainTile.allCases.map(\.inverted) == [
+            "Deine Zeit gehört dir.",
+            "Nur noch Glühendes.",
+            "Sichtbar weiter.",
+            "Mehr, als du brauchst.",
+            "Erreichbar, wenn du willst.",
+            "Es läuft auch ohne dich."
+        ])
     }
 
     @Test("Die Gegenteile sind untereinander verschieden")
     func gegenteileSindEindeutig() {
         #expect(Set(PainTile.allCases.map(\.inverted)).count == 6)
+        #expect(PainTile.allCases.allSatisfy { $0.inverted != $0.label })
     }
 }
