@@ -122,6 +122,10 @@ Das Growth-Memo ist das unbequemste der fünf, und es ist belegt (aus deinem eig
 4. Levmi wird ab Alpha als **Aktivierungswerkzeug für immoJUMP** gerahmt, nicht als Zweitgeschäft. Jede Levmi-Woche muss eine Aktivierungs- oder Churn-Zahl im Kerngeschäft bewegen, sonst Pause. Das ist Gesetz 41 auf dein Unternehmen angewandt.
 5. Die Frage, die alles bestimmt und die nur du beantworten kannst: **Sprichst du mit Alex Fischer über eine Lizenz?**
 
+## 8b. Simulierte Nutzerbefragung (Memo 08): was sie geändert hat
+
+Fünf Personas (Markus 44 Investor, Lena 29 Angestellte mit Nebenprojekt, Tobias 36 Handwerksmeister, Sabine 52 Steuerberaterin, Jonas 23 Student) haben den Ablauf auf dem Papier gespielt. Wiederkommen: 7 · 8 · 3 · 5 · 2. Der Loop trägt bei allen fünf; die Abbrüche sind reparierbar und wurden in die Spec eingearbeitet: Geste-Affordance in den ersten Sekunden (atmen → Partikelspur → erst nach 7 s Text), fünf Knoten und zwei Lichter pro Nacht (damit der Lauwarm-Lernmoment nicht optional bleibt), der lauwarme Knoten sieht bis zur Setzung verführerisch aus (keine beschriftete Falle), die Rückkehr-Sperre sinkt auf 10 Minuten und nennt eine Uhrzeit statt einer Abfuhr, „Bleibt auf deinem Gerät." unter jedem Freitext, eine positive Share-Card direkt nach der Umkehr-Animation, „+1 Tag" ohne demotivierenden 1/30-Balken, Reset-Knopf im Debug-Build für den Dreimal-Test. Zielgruppen-Entscheidung als ADR 06: Markus und Lena sind der Kern, Sabine ist gewinnbar, Tobias vertagt (Sprach-Beweis), Jonas bewusst nicht.
+
 ## 9. Was ich heute Nacht trotzdem baue, obwohl Growth „Werkzeug statt Spiel" sagt
 
 Die Empfehlungen „Diagnose-Instrument mit außergewöhnlicher Oberfläche" (Growth) und „Insel im Nebelmeer" (Director) widersprechen sich nicht: Die Insel **ist** das Diagnose-Instrument. Der Befund entsteht aus dem, was du auf der Insel tust. Ich baue den vertikalen Schnitt wie in Abschnitt 6, plus Befund und Share-Card, und nehme Gamescom und „Platz 1 Overall" als Ambition aus dem Vokabular. Das Ziel heißt ab jetzt: **Apple-Featuring DE, ein Lizenzpartner, D7 ≥ 25 % in der Alpha.**
