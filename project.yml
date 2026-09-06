@@ -8,7 +8,7 @@ options:
   xcodeVersion: "26.0"
 settings:
   base:
-    DEVELOPMENT_TEAM: DAV56Y8ZHK
+    DEVELOPMENT_TEAM: NVN9F2C593   # ImmoDigit GmbH (Team-ID, nicht Zertifikats-Kennung)
     CODE_SIGN_STYLE: Automatic
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -37,6 +37,8 @@ targets:
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
         ITSAppUsesNonExemptEncryption: false
+        CADisableMinimumFrameDurationOnPhone: true
+        UIRequiredDeviceCapabilities: [arm64, metal]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UIUserInterfaceStyle: Dark
