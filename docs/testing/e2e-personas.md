@@ -4,6 +4,8 @@
 
 ## Werkzeug
 
+> **Erfahrung aus der Nacht:** Die Simulator-Steuerung ist pro Gerät freigegeben; in dieser Session war nur das iPhone 17 freigegeben. Parallele Läufe auf iPhone 17 Pro / iPhone Air scheiterten an der fehlenden Freigabe („Let Claude use it"). Personas laufen deshalb nacheinander auf dem freigegebenen Gerät; jede beginnt mit „Neu". Synthetische Eingaben: Halten als `touch_path` mit 4 Punkten (0/700/700/300 ms), Ziehen mit ~200 ms Schritten, Text nur ASCII.
+
 Die Agenten steuern den Simulator über die iOS-Simulator-Werkzeuge (`screenshot`, `tap`, `swipe`, `touch_path` für Halten/Ziehen, `text`). Koordinaten in Punkten; das iPhone 17 hat 402 × 874 Punkte. Vor jedem Durchlauf: App per Debug-Knopf „Neu" zurücksetzen; **Demo-Modus an**, damit die Sperre 30 Sekunden dauert. Jeder Agent bekommt nur die Persona und die Aufgabe „Probier die App aus, sag laut, was du denkst", nicht die Spec.
 
 ## Personas (neu, nicht die aus der Papier-Befragung)

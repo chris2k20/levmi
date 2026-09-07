@@ -2,7 +2,7 @@
 
 **Finde deinen Hebel.** Ein iOS-Spiel zur Persönlichkeitsentwicklung: eine Insel im Nebelmeer, die nur aus dem wächst, was du im echten Leben getan hast.
 
-> Status: Proof of Concept „Erste Nacht" (2026-09-07). Läuft im iOS-26-Simulator. Details: [`docs/design/poc-spec.md`](docs/design/poc-spec.md), Entscheidungen: [`docs/strategy/06-synthese-entscheidungen.md`](docs/strategy/06-synthese-entscheidungen.md) und [`docs/decisions/`](docs/decisions/).
+> Status: Proof of Concept „Erste Nacht" (2026-09-07). Läuft im iOS-26-Simulator. Morgen-Übersicht mit Screenshots: https://claude.ai/code/artifact/2d8baa1b-978a-4ca6-8565-dae87b68a864 Details: [`docs/design/poc-spec.md`](docs/design/poc-spec.md), Entscheidungen: [`docs/strategy/06-synthese-entscheidungen.md`](docs/strategy/06-synthese-entscheidungen.md) und [`docs/decisions/`](docs/decisions/).
 
 ## So testest du morgen früh (Simulator, 3 Minuten)
 
