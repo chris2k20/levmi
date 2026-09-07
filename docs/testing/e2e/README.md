@@ -22,3 +22,10 @@ Das Gerät (iPhone Air) war für die Simulator-Steuerung nicht freigegeben; nur 
 ## Ute, 57, Buchhändlerin · Ben, 26, Junior-Entwickler
 
 Siehe [ute.md](ute.md) und [ben.md](ben.md) (Ben lief bereits auf dem Build mit den Nadine-Fixes).
+
+## Nach den Fixes (Architekt, 06:05)
+
+- Halten ist jetzt timergetrieben (ruhiger Finger lädt). Verifiziert mit dem Vier-Punkt-Halten der Simulator-Steuerung (Licht wird gesetzt). **Werkzeug-Artefakt:** Ein `touch_path` mit nur zwei identischen Punkten wird als Tipp ohne Haltedauer zugestellt und löst nichts aus — das erklärt einen Teil der „Halten zeigt nichts"-Befunde von Nadine und Ben, nicht alle.
+- Ben (2/10) testete den Build **ohne** den Ring-Reset und ohne den Timer; Nadine und Ute (3 und 4/10) den Build ohne alle Halte-Fixes. Die Scores sind der ehrliche Stand vor den Fixes. Ein neuer Persona-Durchlauf auf dem finalen Build steht aus.
+- Was alle drei mochten: Optik und Stimmung, das Ziehen des Lichts, das Wachsen von Insel und Sonne.
+- Was alle drei vermissten: ein Satz, was Levmi ist (jetzt in den ersten 3,5 Sekunden), sichtbarer Fortschritt beim Halten (jetzt Kristallwachstum plus Timer), Bestätigung nach dem Setzen (jetzt „Licht gesetzt. Die Wurzeln wachsen.").
