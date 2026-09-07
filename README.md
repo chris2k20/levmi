@@ -26,7 +26,17 @@ Alternativ in Xcode: `open Levmi.xcodeproj`, Scheme `Levmi`, Ziel „iPhone 17",
 
 ## Auf deinem iPhone
 
-Dein iPhone 15 Pro Max läuft iOS 27.0. Xcode 26.6 kann darauf nicht installieren (fehlende Device-Support-Dateien). Dafür brauchst du Xcode 27 (Release Candidate oder Beta von developer.apple.com) und rund 100 GB freien Speicher; aktuell sind 45 GB frei. Danach: iPhone per Kabel anschließen, in Xcode das Team „ImmoDigit GmbH" (NVN9F2C593) wählen, Gerät als Ziel, ⌘R, auf dem iPhone unter Einstellungen → Allgemein → VPN & Geräteverwaltung dem Entwicklerzertifikat vertrauen. TestFlight geht erst mit einem Apple-Distribution-Zertifikat und einem App-Store-Connect-Eintrag.
+Installation per USB funktioniert auch mit iOS 27 und Xcode 26.6 (verifiziert am 2026-09-07, 11:25):
+
+```bash
+xcodebuild -project Levmi.xcodeproj -scheme Levmi -destination 'generic/platform=iOS' -configuration Debug -derivedDataPath .derived -allowProvisioningUpdates -allowProvisioningDeviceRegistration DEVELOPMENT_TEAM=NVN9F2C593 build
+```
+
+```bash
+xcrun devicectl device install app --device B3E3E1E8-98AF-5B82-897A-54DE0E753CFB .derived/Build/Products/Debug-iphoneos/Levmi.app
+```
+
+Danach das Levmi-Icon auf dem iPhone antippen. Erscheint „Nicht vertrauenswürdiger Entwickler": Einstellungen → Allgemein → VPN & Geräteverwaltung → „Christian Simons" vertrauen. Debugging in Xcode (Breakpoints, Konsole) braucht weiterhin Xcode 27. Auf dem Gerät gibt es, anders als im Simulator, Haptik und 120 Hz.
 
 ## Struktur
 
