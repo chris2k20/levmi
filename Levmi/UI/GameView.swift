@@ -23,6 +23,9 @@ struct GameView: View {
     @State private var showText1 = false
     @State private var showText2 = false
     @State private var showDayBadge = false
+    @State private var showFraming = false
+    @State private var showText3 = false
+    @State private var showSunHint = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -91,12 +94,14 @@ struct GameView: View {
             await runFirstLightTimer()
         }
         .onChange(of: appModel.state.nodeOutcomes) { oldValue, newValue in
-            guard newValue.count > oldValue.count, newValue.last == .lukewarm else { return }
-            Task { await flashText2() }
+            guard newValue.count > oldValue.count else { return }
+            if newValue.last == .lukewarm { Task { await flashText2() } }
+            if newValue.last == .glowing { Task { await flashText3() } }
         }
         .onChange(of: appModel.state.phase) { oldValue, newValue in
             abortedHoldCount = 0
             if newValue == .nodes { Task { await flashText1() } }
+            if newValue == .roots || newValue == .dawnProof { Task { await runSunHintTimer() } } else { showSunHint = false }
             // „+1 Tag" erscheint erst NACH dem zweiten Durchbruch (Spec 1.3), nicht schon beim
             // Annehmen des Beweises — sonst nimmt die Zahl dem Morgengrauen die Pointe.
             if newValue == .cost, oldValue == .breakthroughProof, appModel.state.days > 0 {
@@ -115,15 +120,23 @@ struct GameView: View {
     private var hintLine: some View {
         switch appModel.state.phase {
         case .firstLight:
-            HintLine(text: "Zieh das Licht in den Nebel.", isVisible: showFirstLightHint)
+            if showFraming {
+                HintLine(text: "Levmi. Deine Insel wächst, wenn du handelst.", isVisible: true)
+            } else {
+                HintLine(text: "Zieh das Licht in den Nebel.", isVisible: showFirstLightHint)
+            }
         case .nodes:
             if showText1 {
                 HintLine(text: "Du hast ein Licht.", isVisible: true)
             } else if showText2 {
                 HintLine(text: "Das Lauwarme hat dein Licht gefressen.", isVisible: true)
+            } else if showText3 {
+                HintLine(text: "Licht gesetzt. Die Wurzeln wachsen.", isVisible: true)
             } else {
-                HintLine(text: "Halten, bis der Ring voll ist.", isVisible: abortedHoldCount >= 2)
+                HintLine(text: "Halten, bis der Ring voll ist.", isVisible: abortedHoldCount >= 1)
             }
+        case .roots, .dawnProof:
+            HintLine(text: "Zieh die Sonne hoch.", isVisible: showSunHint)
         default:
             EmptyView()
         }
@@ -132,9 +145,26 @@ struct GameView: View {
     private func runFirstLightTimer() async {
         guard appModel.state.phase == .firstLight else { return }
         showFirstLightHint = false
-        try? await Task.sleep(for: .seconds(7))
+        showFraming = true
+        try? await Task.sleep(for: .seconds(3.5))
+        guard !Task.isCancelled else { return }
+        withAnimation { showFraming = false }
+        try? await Task.sleep(for: .seconds(3.5))
         guard !Task.isCancelled else { return }
         showFirstLightHint = true
+    }
+
+    private func runSunHintTimer() async {
+        showSunHint = false
+        try? await Task.sleep(for: .seconds(5))
+        guard !Task.isCancelled, appModel.state.phase == .roots || appModel.state.phase == .dawnProof else { return }
+        withAnimation { showSunHint = true }
+    }
+
+    private func flashText3() async {
+        showText3 = true
+        try? await Task.sleep(for: .seconds(2.5))
+        withAnimation { showText3 = false }
     }
 
     private func flashText1() async {

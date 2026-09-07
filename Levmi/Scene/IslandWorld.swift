@@ -355,7 +355,7 @@ final class IslandWorld {
         var materials: [SCNMaterial] = []
         for i in 0..<segments {
             let angle = Float(i) / Float(segments) * 2 * .pi
-            let tick = SCNNode(geometry: SCNBox(width: 0.035, height: 0.1, length: 0.02, chamferRadius: 0.008))
+            let tick = SCNNode(geometry: SCNBox(width: 0.06, height: 0.17, length: 0.03, chamferRadius: 0.012))
             let material = SCNMaterial()
             material.lightingModel = .constant
             material.diffuse.contents = UIColor.white
@@ -363,7 +363,7 @@ final class IslandWorld {
             material.emission.intensity = 0
             material.transparency = 0
             tick.geometry?.materials = [material]
-            let radius: Float = 0.24
+            let radius: Float = 0.38
             tick.position = SCNVector3(cos(angle) * radius, 0, sin(angle) * radius)
             tick.eulerAngles = SCNVector3(0, -angle, 0)
             ticks.append(tick)

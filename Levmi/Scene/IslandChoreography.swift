@@ -252,6 +252,13 @@ extension IslandWorld {
         if nodeFamilies[nodeID] != "cold" {
             slot.material.emission.intensity = 1.1 + CGFloat(clamped) * 1.3
         }
+        // Sichtbares Zwischen-Feedback (Nutzertest Nadine): Der Kristall wächst mit dem Halten,
+        // nicht nur der kleine Ring — auch aus 7 Einheiten Entfernung unübersehbar.
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = isFallingBack ? 0.35 : 0.06
+        let grow = 1.0 + Float(clamped) * 0.55
+        slot.crystalNode.scale = SCNVector3(grow, grow, grow)
+        SCNTransaction.commit()
         camera.vignettingIntensity = 1.0 + clamped * 0.5
     }
 
