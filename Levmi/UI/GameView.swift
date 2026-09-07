@@ -101,6 +101,7 @@ struct GameView: View {
         .onChange(of: appModel.state.phase) { oldValue, newValue in
             abortedHoldCount = 0
             if newValue == .nodes { Task { await flashText1() } }
+            if newValue == .firstLight { Task { await runFirstLightTimer() } } // auch nach „Neu
             if newValue == .roots || newValue == .dawnProof { Task { await runSunHintTimer() } } else { showSunHint = false }
             // „+1 Tag" erscheint erst NACH dem zweiten Durchbruch (Spec 1.3), nicht schon beim
             // Annehmen des Beweises — sonst nimmt die Zahl dem Morgengrauen die Pointe.

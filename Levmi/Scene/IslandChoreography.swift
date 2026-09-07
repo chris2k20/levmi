@@ -232,6 +232,17 @@ extension IslandWorld {
     func chargeNode(kind nodeID: Int, progress: Double) {
         guard let slot = nodeSlots[nodeID] else { return }
         let clamped = max(0, min(1, progress))
+        // Nutzertest Nadine, Schritt 10: Beim Wechsel auf einen anderen Knoten darf kein alter
+        // Ladering stehen bleiben (verwaiste Touches ohne `ended`). Andere Ringe zurücksetzen.
+        if clamped <= 0.05 {
+            for (otherID, other) in nodeSlots where otherID != nodeID && !settledNodeIDs.contains(otherID) {
+                if (chargeProgress[otherID] ?? 0) > 0 {
+                    chargeProgress[otherID] = 0
+                    for material in other.ringMaterials { material.emission.intensity = 0; material.transparency = 0 }
+                    other.crystalNode.scale = SCNVector3(1, 1, 1)
+                }
+            }
+        }
         let previous = chargeProgress[nodeID] ?? 0
         chargeProgress[nodeID] = clamped
         let isFallingBack = clamped < previous - 0.001
