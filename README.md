@@ -16,7 +16,11 @@ Das generiert das Xcode-Projekt, baut die App und startet sie im Simulator „iP
 
 **Demo-Modus:** oben rechts der kleine Schalter (nur in Debug-Builds). Er verkürzt nur Zeitkonstanten (Sperre 60 Min → 30 s, Rückspiel 1 Tag → 1 Min), schaltet keine Regel ab. Damit spielst du den kompletten Loop in unter vier Minuten: erste Minute → Onboarding → Absicht → „Für heute reicht's" → 30 s warten → zurück → Beweis → Sonne hochziehen → Durchbruch → +1 Tag → Kosten-Frage → Befund → Teilen → beim nächsten Öffnen dein eigener Satz.
 
-**Der Go/No-Go-Test** (nicht „gefällt es dir"): Spielst du den 30-Sekunden-Loop dreimal ungefragt? Fühlst du nach dem Beweis „draußen getan, drinnen gewachsen"? Versteht ein Fremder ohne Text, was zu tun ist? Dauert der Beweis unter 45 Sekunden?
+**Der Go/No-Go-Test** (nicht „gefällt es dir"): Spielst du den 30-Sekunden-Loop dreimal ungefragt (Knopf „Neu" oben rechts setzt zurück)? Fühlst du nach dem Beweis „draußen getan, drinnen gewachsen"? Versteht ein Fremder ohne Text, was zu tun ist? Dauert der Beweis unter 45 Sekunden?
+
+**Die These prüfst du nur im Echt-Modus** (Demo aus): Spiel die erste Minute, wähl eine Absicht, die du heute wirklich tun kannst, lass dich wegschicken. Die Tür öffnet sich 10 Minuten nach der Absicht (nach 20 Uhr: um 06:00). Tu die Sache. Komm zurück, schreib den Beweis, zieh die Sonne hoch. Wenn sich das anfühlt wie „draußen getan, drinnen gewachsen", lebt der Kern. Der Demo-Modus ist ein Vorführwerkzeug für andere, kein Test der These.
+
+**Bedienung ohne Worte:** Licht nach unten in den Nebel ziehen · Knoten gedrückt halten, bis der Ring voll ist (zwei Lichter pro Nacht, lauwarme Knoten fressen das Licht) · Sonne nach oben ziehen.
 
 Alternativ in Xcode: `open Levmi.xcodeproj`, Scheme `Levmi`, Ziel „iPhone 17", ⌘R.
 
