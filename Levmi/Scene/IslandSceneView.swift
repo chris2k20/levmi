@@ -107,6 +107,19 @@ struct IslandSceneView: UIViewRepresentable {
         private var lastLocation: CGPoint = .zero
         private var chargeStartedAt: Date?
         private var sunDragProgress: Double = 0
+        /// Für die Tap-vs-Drag-Unterscheidung auf der Sonne (siehe `ended()`): jede Geste setzt
+        /// diese in `began()`, unabhängig vom erkannten `mode`.
+        private var gestureStartedAt = Date()
+        private var gestureStartLocation: CGPoint = .zero
+        /// Großzügiger Trefferradius um die projizierte Sonnenposition (siehe `began()`) — die Sonne
+        /// selbst ist auf dem Bildschirm klein, und die Nebelscheibe/das Wasser (riesige flache
+        /// Ebenen auf ihrem Höhenniveau) gewannen bislang jeden `hitTest` gegen sie (siehe
+        /// `IslandWorld.nonInteractiveCategory`). Ein Treffer hier gilt unabhängig vom Hit-Test.
+        private static let sunHitRadius: CGFloat = 44
+        /// Fortschritts-Schritt pro Tap auf die Sonne — identisch zum VoiceOver-Custom-Action-Wert
+        /// in `IslandAccessibilitySCNView.buildAccessibilityElements`, damit Tippen (Zeigefinger)
+        /// und Antippen (VoiceOver) sich gleich anfühlen: drei Tipps bringen sie auf voll.
+        private static let sunTapStep: Double = 0.34
 
         init(world: IslandWorld, handlers: IslandSceneHandlers) {
             self.world = world
@@ -137,13 +150,30 @@ struct IslandSceneView: UIViewRepresentable {
 
         private func began(at location: CGPoint, in view: SCNView) {
             lastLocation = location
-            let options: [SCNHitTestOption: Any] = [.boundingBoxOnly: true]
+            gestureStartedAt = Date()
+            gestureStartLocation = location
+            // `.categoryBitMask` schließt die Nebelscheibe und das Wasser aus (siehe
+            // `IslandWorld.nonInteractiveCategory`) — beide sind riesige flache Ebenen, deren
+            // Hit-Test-Box sonst jeden Kamerastrahl zu einem entfernteren Ziel (z. B. der Sonne)
+            // zuerst abfängt (`SCNHitTestOption.searchMode` ist standardmäßig `.closest`).
+            let options: [SCNHitTestOption: Any] = [
+                .boundingBoxOnly: true,
+                .categoryBitMask: 1,
+            ]
             let hits = view.hitTest(location, options: options)
+
+            // Großzügiger, hit-test-unabhängiger Fallback für die Sonne: sie ist auf dem Bildschirm
+            // klein (ferne Kugel), und selbst ohne die Nebelscheibe/das Wasser im Weg bleibt ein
+            // reiner 3D-Hit-Test unnötig streng. Ein Treffer hier zählt zusätzlich zum Hit-Test.
+            let sunProjected = view.projectPoint(world.sunNode.presentation.position)
+            let sunOnScreen = !world.sunNode.isHidden && sunProjected.z > 0 && sunProjected.z < 1
+            let sunScreenPoint = CGPoint(x: CGFloat(sunProjected.x), y: CGFloat(sunProjected.y))
+            let nearSun = sunOnScreen && hypot(location.x - sunScreenPoint.x, location.y - sunScreenPoint.y) <= Self.sunHitRadius
 
             if hits.contains(where: { world.isPlayerLight($0.node) }) {
                 mode = .light
                 world.cancelIdleAffordance()
-            } else if hits.contains(where: { world.isSun($0.node) }) {
+            } else if nearSun || hits.contains(where: { world.isSun($0.node) }) {
                 mode = .sun
                 sunDragProgress = world.sunProgressHighWater
             } else if let id = hits.compactMap({ world.islandNodeID(forHitNode: $0.node) }).first {
@@ -201,6 +231,16 @@ struct IslandSceneView: UIViewRepresentable {
                     world.presentLight() // nicht tief genug gezogen: zurück zur Startposition
                 }
             case .sun:
+                // Kurzes Antippen (kein Drag) durchläuft `changed()` nie, `sunDragProgress` bliebe
+                // beim alten Wert stehen — genau das Verhalten aus dem Bug-Report ("dreimaliges
+                // Tippen registriert keinen Fortschritt"). Tap-Erkennung wie bei den Knoten-Holds:
+                // kurze Dauer, kaum Bewegung. Schrittgröße identisch zur VoiceOver-Custom-Action.
+                let elapsed = Date().timeIntervalSince(gestureStartedAt)
+                let moved = hypot(location.x - gestureStartLocation.x, location.y - gestureStartLocation.y)
+                if elapsed < 0.25, moved < 10 {
+                    sunDragProgress = min(1, world.sunProgressHighWater + Self.sunTapStep)
+                    world.sunProgress(sunDragProgress)
+                }
                 handlers.onSunReleased(sunDragProgress)
             case .node(let id):
                 guard let start = chargeStartedAt else { return }

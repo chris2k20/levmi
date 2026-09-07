@@ -152,7 +152,11 @@ struct GameView: View {
     @ViewBuilder
     private var overlay: some View {
         switch appModel.state.phase {
-        case .firstLight, .nodes, .roots, .breakthrough, .dawnProof, .idle:
+        case .firstLight, .nodes, .roots, .breakthrough, .dawnProof, .breakthroughProof, .idle:
+            // TEMP-BUILD-FIX (nicht Teil des Scene-Auftrags): `breakthroughProof` wurde in
+            // GamePhase ergänzt (Spec v3.1), aber hier noch nicht behandelt — Build war rot.
+            // Vorläufig wie `.breakthrough`/`.dawnProof` ohne eigenes Overlay. Bitte prüfen,
+            // ob breakthroughProof eine eigene Karte braucht.
             EmptyView()
 
         case .onboardingPain:

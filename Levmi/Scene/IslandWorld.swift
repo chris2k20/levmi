@@ -44,6 +44,13 @@ final class IslandWorld {
 
     let scene = SCNScene()
 
+    /// Kategorie für Knoten, die aus interaktiven Hit-Tests herausgehalten werden sollen (siehe
+    /// `makeFogDisc`/`makeWaterNode`) — beide sind riesige flache Ebenen, deren `boundingBoxOnly`-
+    /// Hit-Test-Box praktisch jeden Kamerastrahl kreuzt, der weiter entfernte Ziele (z. B. die
+    /// Sonne) auf gleicher Höhe passiert. `IslandSceneView` filtert diese Kategorie über
+    /// `SCNHitTestOption.categoryBitMask` heraus.
+    static let nonInteractiveCategory = 1 << 8
+
     // Kamera-Rig
     let orbitRig = SCNNode()
     let cameraNode = SCNNode()
@@ -104,12 +111,17 @@ final class IslandWorld {
     let ambientSparks = SCNParticleSystem()
     let impactBurstTemplate = SCNParticleSystem()
     let breakthroughBurstTemplate = SCNParticleSystem()
+    let idleTrailTemplate = SCNParticleSystem()
 
     // Kamera-Positionen (siehe IslandChoreography für die Animationen dazwischen)
     // art-direction.md: Kamera-Höhe 1,6 über dem Wasser, Blick ~8° nach unten, Insel auf
     // 8–10 Einheiten Distanz (teilweise im Nebel, klein und fern statt Modell-Viewer-Nähe).
     static let cameraClosePosition = SCNVector3(0, 1.5, 7.0)
     static let cameraOrbitPosition = SCNVector3(0, 1.6, 9.0)
+    // Dolly-In für die Knoten-Phase (siehe presentNodes/presentSun): die fünf Knoten liegen bei
+    // cameraOrbitPosition nur ~15-30 pt auseinander (nicht daumentauglich, ≥ 56 pt gefordert).
+    // Näher heran vergrößert ihren Bildschirmabstand, ohne den Insel-Radius unrealistisch aufzublasen.
+    static let cameraNodesPosition = SCNVector3(0, 1.6, 5.5)
     static let cameraDivePosition = SCNVector3(0, 0.1, 3.0)
     static let cameraBreakthroughPosition = SCNVector3(0, 1.4, 5.0)
     static let cameraLookTarget = SCNVector3(0, 0.6, 0)
@@ -188,7 +200,13 @@ final class IslandWorld {
         material.roughness.contents = 0.3
         material.metalness.contents = 0.1
         floor.materials = [material]
-        return SCNNode(geometry: floor)
+        let node = SCNNode(geometry: floor)
+        node.name = "water"
+        // Riesige flache Ebene (SCNFloor) — siehe nonInteractiveCategory-Kommentar in makeFogDisc:
+        // sonst blockiert sie denselben Kamerastrahl ein zweites Mal, sobald die Nebelscheibe aus
+        // dem Hit-Test heraus ist.
+        node.categoryBitMask = IslandWorld.nonInteractiveCategory
+        return node
     }
 
     private static func makeFogDisc() -> (SCNNode, SCNMaterial) {
@@ -206,6 +224,14 @@ final class IslandWorld {
         node.eulerAngles.x = -.pi / 2
         node.position = SCNVector3(0, fogLevelHeights[0], 0)
         node.name = "fogDisc"
+        // 60×60 Einheiten flach in der Szene: die (boundingBoxOnly-)Hit-Test-Box deckt praktisch
+        // jeden Kamerastrahl ab, der bei y≈fogLevelHeights[...] die Nebelebene kreuzt — genau dort,
+        // wo der Strahl zur fernen Sonne (y −3.2, z −30) auf dem Weg vorbeikommt. `SCNHitTestOption
+        // .searchMode` ist standardmäßig `.closest`, also gewinnt IMMER die Nebelscheibe gegen jedes
+        // dahinterliegende Ziel — Ursache dafür, dass ein Drag/Tap auf die Sonne nie ankam (Bug
+        // „Sonne reagiert nicht"). `nonInteractiveCategory` nimmt sie aus jedem interaktiven
+        // Hit-Test heraus (siehe IslandSceneView.Coordinator.began), ohne ihr Rendering zu ändern.
+        node.categoryBitMask = IslandWorld.nonInteractiveCategory
         return (node, material)
     }
 
@@ -221,10 +247,11 @@ final class IslandWorld {
             (SCNVector3(0.6, 0.12, -0.25), 0.36, SCNVector3(-0.1, 2.0, 0.2)),
             (SCNVector3(-0.15, 0.18, 0.05), 0.3, SCNVector3(0.2, -1.1, -0.25)),
         ]
-        // "Insel nimmt ~35 % der Breite ein" (art-direction.md) — bei der Distanz aus
-        // cameraOrbitPosition (9 Einheiten) muss der Cluster kleiner sein als die reinen
-        // Rohradien; 0.7 bringt ihn in die Nähe der Zielgröße, ohne jede Zahl neu zu erfinden.
-        let clusterScale: Float = 0.7
+        // "Insel nimmt ~35 % der Breite ein" (art-direction.md) ist eine Richtgröße — Bug-Fix
+        // Knotenabstand (siehe buildNodeSlots) braucht einen breiteren Cluster, damit die jetzt
+        // weiter außen sitzenden Knoten noch sichtbar auf Gestein stehen, nicht daneben schweben.
+        // 0.95 statt 0.7: Bedienbarkeit geht laut Vorgabe vor der 35-%-Richtgröße.
+        let clusterScale: Float = 0.95
         for (rawPosition, rawRadius, tilt) in layout {
             let position = SCNVector3(rawPosition.x * clusterScale, rawPosition.y * clusterScale, rawPosition.z * clusterScale)
             let radius = rawRadius * clusterScale
@@ -245,23 +272,30 @@ final class IslandWorld {
     // MARK: - Fünf Knoten-Slots
 
     private func buildNodeSlots() {
-        // Unregelmäßiger Ring: Winkel und Radius bewusst nicht gleichmäßig verteilt.
-        // Höhe bewusst ÜBER dem höchsten Gesteinspunkt (~0.47 nach dem 0.7-Schrumpfen) und Radius
-        // näher am Zentrum: die Knoten sollen wie eine kleine Krone auf dem Cluster sitzen, nicht
-        // an einzelnen Gesteinsstücken hängen, die je nach Winkel gar nicht darunterliegen.
+        // Bug-Fix Knotenabstand: die alten Winkel/Radien (18/95/152/231/308°, r 0.3–0.42) waren zwar
+        // "unregelmäßig", ihre X-Projektion (cos(Winkel)*Radius) lag aber fast komplett im Band
+        // [-0.35, +0.40] — bei cameraOrbitPosition (9 Einheiten) nur ~15–30 pt Bildschirmabstand,
+        // nicht daumentauglich (Ziel ≥ 56 pt auf 402×874 pt). Radius/Winkel jetzt so gewählt, dass
+        // die X-Projektion den Bereich [-0.86, +0.90] annähernd gleichmäßig (aber bewusst nicht
+        // symmetrisch) abdeckt; alle Winkel bleiben auf der Kamera zugewandten Ringhälfte (0–180°),
+        // damit kein Knoten hinter dem Gesteins-Cluster verschwindet. Radius bis 0.95 statt vorher
+        // 0.3–0.42 — dafür Insel-Cluster in buildIslandRock auf 0.95 verbreitert (Krone sitzt weiter
+        // außen, aber noch sichtbar auf Gestein) — und `cameraNodesPosition` (Dolly-In, siehe
+        // presentNodes/presentSun) liefert den Rest der nötigen Bildschirm-Vergrößerung, ohne den
+        // Radius allein bis ins Absurde zu treiben.
         let slots: [(id: Int, angleDeg: Float, radius: Float, height: Float)] = [
-            (0, 18, 0.42, 0.56),
-            (1, 95, 0.32, 0.52),
-            (2, 152, 0.4, 0.58),
-            (3, 231, 0.3, 0.5),
-            (4, 308, 0.38, 0.54),
+            (0, 18, 0.95, 0.64),
+            (1, 38, 0.65, 0.60),
+            (2, 92, 0.48, 0.68),
+            (3, 133, 0.62, 0.58),
+            (4, 155, 0.95, 0.62),
         ]
         for slot in slots {
             let rad = slot.angleDeg * .pi / 180
             let position = SCNVector3(cos(rad) * slot.radius, slot.height, sin(rad) * slot.radius)
 
-            // r 0.11 statt der 0.16 aus art-direction.md: im selben 0.7-Maßstab wie der geschrumpfte
-            // Gesteins-Cluster (siehe buildIslandRock), sonst wirken die Knoten überdimensioniert.
+            // r 0.11 statt der 0.16 aus art-direction.md: im selben Maßstab wie der Gesteins-Cluster
+            // (siehe buildIslandRock), sonst wirken die Knoten überdimensioniert.
             let crystalNode = SCNNode(geometry: IslandGeometry.flatShadedIcosahedron(radius: 0.11))
             let material = SCNMaterial()
             material.lightingModel = .physicallyBased
@@ -556,6 +590,30 @@ final class IslandWorld {
         breakthroughBurstTemplate.blendMode = .additive
         breakthroughBurstTemplate.isLightingEnabled = false
         breakthroughBurstTemplate.particleImage = IslandGeometry.softParticleImage(diameter: 72)
+
+        // Ursache des opaken schwarzen Quadrats unter dem Spieler-Licht (siehe spawnIdleTrail in
+        // IslandChoreography.swift): SCNAction.run-Blöcke laufen auf SceneKits Rendering-Thread,
+        // nicht auf dem MainActor. `spawnIdleTrail` erzeugte dort bei jedem Aufruf per
+        // IslandGeometry.softParticleImage (UIGraphicsImageRenderer) ein NEUES UIImage — off-main
+        // gerendert, lud SceneKit daraus keine gültige Textur und fiel auf ein unbeleuchtetes,
+        // additiv NICHT respektiertes schwarzes Quadrat zurück. Fix: Bild + restliche Konfiguration
+        // hier einmalig auf dem MainActor bauen (wie bei den anderen drei Partikel-Vorlagen);
+        // `spawnIdleTrail` kopiert diese Vorlage nur noch und setzt `particleColor`.
+        idleTrailTemplate.loops = false
+        idleTrailTemplate.emissionDuration = 0.4
+        idleTrailTemplate.birthRate = 24
+        idleTrailTemplate.particleLifeSpan = 0.9
+        idleTrailTemplate.particleLifeSpanVariation = 0.2
+        idleTrailTemplate.particleSize = 0.018
+        idleTrailTemplate.particleSizeVariation = 0.006
+        idleTrailTemplate.blendMode = .additive
+        idleTrailTemplate.isLightingEnabled = false
+        idleTrailTemplate.particleVelocity = 0.55
+        idleTrailTemplate.particleVelocityVariation = 0.1
+        idleTrailTemplate.emittingDirection = SCNVector3(0, -1, 0)
+        idleTrailTemplate.spreadingAngle = 4
+        idleTrailTemplate.acceleration = SCNVector3(0, -0.35, 0)
+        idleTrailTemplate.particleImage = IslandGeometry.softParticleImage(diameter: 32)
     }
 
     // MARK: - Hit-Test-Hilfen (für IslandSceneView)

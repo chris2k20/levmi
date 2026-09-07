@@ -65,31 +65,34 @@ extension IslandWorld {
         }
         playerLightNode.runAction(.sequence([.wait(duration: 1.5), startBreathing]), forKey: "idleBreatheSchedule")
 
+        // SCNAction.run-Blöcke laufen auf SceneKits Rendering-Thread, nicht auf dem MainActor
+        // (siehe idleTrailTemplate-Kommentar in IslandWorld.swift). Der einmalig gebaute
+        // Partikel-Vorlage-Fix allein reichte nicht: `scene.addParticleSystem(_:transform:)` selbst
+        // von dort aufzurufen, während SceneKit mitten im Rendering ist, lieferte gelegentlich noch
+        // ein winziges, falsch initialisiertes Quadrat (GPU-Ressource wird nebenläufig angelegt).
+        // Erst der Hop zurück auf den Main-Thread vor dem eigentlichen Scene-Graph-Zugriff behebt es
+        // vollständig — dasselbe Muster wie im `SCNTransaction.completionBlock` in
+        // `pulseFieldOfView` weiter unten in dieser Datei.
         let emitTrail = SCNAction.run { [weak self] node in
-            self?.spawnIdleTrail(from: node.presentation.position)
+            let position = node.presentation.position
+            DispatchQueue.main.async {
+                self?.spawnIdleTrail(from: position)
+            }
         }
         let loop = SCNAction.repeatForever(.sequence([emitTrail, .wait(duration: 3.0)]))
         playerLightNode.runAction(.sequence([.wait(duration: 3.0), loop]), forKey: "idleTrailSchedule")
     }
 
+    /// Kopiert `idleTrailTemplate` statt bei jedem Aufruf ein neues `SCNParticleSystem` (inkl.
+    /// `particleImage`) zu bauen. Dieser Aufruf kommt aus einem `SCNAction.run`-Block, der auf
+    /// SceneKits Rendering-Thread läuft, nicht auf dem MainActor — `IslandGeometry.softParticleImage`
+    /// (UIGraphicsImageRenderer) dort frisch zu rendern lieferte ein Bild, aus dem SceneKit keine
+    /// Textur laden konnte, und fiel auf ein opakes schwarzes Quadrat zurück (Ursache des Bugs
+    /// „schwarzes Quadrat unter dem Spieler-Licht"). Die Vorlage entsteht jetzt einmalig auf dem
+    /// MainActor in `buildBurstTemplates()`; hier wird nur noch kopiert und die Lichtfarbe gesetzt.
     private func spawnIdleTrail(from position: SCNVector3) {
-        let ps = SCNParticleSystem()
-        ps.loops = false
-        ps.emissionDuration = 0.4
-        ps.birthRate = 24
-        ps.particleLifeSpan = 0.9
-        ps.particleLifeSpanVariation = 0.2
-        ps.particleSize = 0.018
-        ps.particleSizeVariation = 0.006
+        guard let ps = idleTrailTemplate.copy() as? SCNParticleSystem else { return }
         ps.particleColor = currentLightColor
-        ps.blendMode = .additive
-        ps.isLightingEnabled = false
-        ps.particleVelocity = 0.55
-        ps.particleVelocityVariation = 0.1
-        ps.emittingDirection = SCNVector3(0, -1, 0)
-        ps.spreadingAngle = 4
-        ps.acceleration = SCNVector3(0, -0.35, 0)
-        ps.particleImage = IslandGeometry.softParticleImage(diameter: 32)
         scene.addParticleSystem(ps, transform: SCNMatrix4MakeTranslation(position.x, position.y, position.z))
     }
 
@@ -194,6 +197,12 @@ extension IslandWorld {
 
     /// `specs` weist jeder ID ihre Familie zu — das entscheidet die Domain, nicht die Insel.
     func presentNodes(_ specs: [(id: Int, kind: String)]) {
+        // Dolly-In (Bug-Fix Knotenabstand): vergrößert den Bildschirmabstand der fünf Knoten, ohne
+        // ihren Insel-Radius allein bis ins Absurde zu treiben (siehe cameraNodesPosition/
+        // buildNodeSlots). presentSun() fährt beim Sonnenaufgang wieder auf cameraOrbitPosition
+        // zurück. `performCameraDive()` (showRoots) kehrt während der Knoten-Phase ebenfalls hierher
+        // zurück, nicht zur weiten Orbit-Position.
+        moveCamera(to: Self.cameraNodesPosition, lookAt: Self.cameraLookTarget, duration: 0.7, key: "cameraMove")
         for (index, spec) in specs.enumerated() {
             guard let slot = nodeSlots[spec.id] else { continue }
             nodeFamilies[spec.id] = spec.kind
@@ -262,6 +271,15 @@ extension IslandWorld {
         settle.timingMode = .easeOut
         slot.crystalNode.runAction(.sequence([squash, settle]), forKey: "impactBounce")
 
+        // `configureCrystal` lässt für "glowing" eine `repeatForever`-Puls-Action auf
+        // `slot.crystalNode` laufen, die `material.emission.intensity` bei JEDEM Frame überschreibt
+        // (Custom-Action-Handler laufen auf SceneKits Rendering-Thread, nicht dem MainActor). Ohne
+        // `removeAction` hier konkurriert dieser Dauer-Schreiber mit dem direkten Schreiben unten von
+        // zwei verschiedenen Threads auf dieselbe Material-Property — ein Data Race auf dem
+        // GPU-Uniform-Buffer der Emission, der als Ursache für das opake schwarze Quadrat auf dem
+        // gerade getroffenen Knoten in Frage kommt. Erst stoppen, dann exklusiv setzen.
+        slot.crystalNode.removeAction(forKey: "pulse")
+
         // Verschmilzt sichtbar mit dem Licht — bleibt als Wurzel-Anker dauerhaft heller.
         slot.material.emission.intensity = 2.0
 
@@ -320,7 +338,9 @@ extension IslandWorld {
             for material in islandRockMaterials { material.transparency = translucent }
             let restore = SCNAction.run { [weak self] _ in
                 guard let self else { return }
-                self.cameraNode.position = Self.cameraOrbitPosition
+                // showRoots läuft nur während der Knoten-Phase — zurück zur gedollyten Knoten-
+                // Position (siehe presentNodes), nicht zur weiten Orbit-Position.
+                self.cameraNode.position = Self.cameraNodesPosition
                 self.cameraNode.look(at: Self.cameraLookTarget)
                 for material in self.islandRockMaterials { material.transparency = 1.0 }
             }
@@ -339,7 +359,9 @@ extension IslandWorld {
             SCNTransaction.commit()
         }
         let hold = SCNAction.wait(duration: 0.4)
-        let diveUp = SCNAction.move(to: Self.cameraOrbitPosition, duration: 0.55)
+        // showRoots läuft nur während der Knoten-Phase — zurück zur gedollyten Knoten-Position
+        // (siehe presentNodes), nicht zur weiten Orbit-Position.
+        let diveUp = SCNAction.move(to: Self.cameraNodesPosition, duration: 0.55)
         diveUp.timingMode = .easeOut
         let lookUp = SCNAction.customAction(duration: 0.55) { node, _ in node.look(at: Self.cameraLookTarget) }
         let fadeRockIn = SCNAction.run { [weak self] _ in
@@ -464,6 +486,9 @@ extension IslandWorld {
     // MARK: - Sonne / Morgengrauen
 
     func presentSun() {
+        // Dolly zurück von der Knoten-Position (siehe presentNodes) auf die weite Orbit-Position —
+        // die Knoten-Phase ist vorbei, die Sonne soll fern und die Insel wieder klein wirken.
+        moveCamera(to: Self.cameraOrbitPosition, lookAt: Self.cameraLookTarget, duration: 1.0, key: "cameraMove")
         sunNode.isHidden = false
         sunNode.opacity = 0
         sunNode.scale = SCNVector3(1, 1, 1)
