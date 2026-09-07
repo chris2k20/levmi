@@ -674,7 +674,7 @@ enum Palette {
     /// (die Hex-Werte unterscheiden sich nur in der zweiten Nachkommastelle der Sättigung).
     static let nodeGlowing = UIColor(levmiHex: "#FFB347")
     static let nodeLukewarm = UIColor(levmiHex: "#FFC27A")
-    static let nodeWarmShimmer = UIColor(levmiHex: "#FFA9D6")
+    static let nodeWarmShimmer = UIColor(levmiHex: "#FFD08A")
     static let nodeCold = UIColor(levmiHex: "#2A2F45")
     static let spentGray = UIColor(white: 0.35, alpha: 1)
 
