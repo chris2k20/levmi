@@ -89,6 +89,9 @@ public enum SceneProjection {
             return strongRoots >= 2 ? .full : (strongRoots == 1 ? .half : .thin)
         case .breakthroughProof:
             return .second
+        case .cost, .befund, .idle:
+            // Nach dem ersten Beweis bleibt der Trieb dauerhaft stehen (Wiederherstellung nach Neustart).
+            return state.days > 0 ? .second : nil
         default:
             return nil
         }

@@ -27,10 +27,12 @@ final class AppModel {
     #if DEBUG
     /// Schalter der `DebugBar` — wechselt nur Zeitkonstanten (`Rules.demo`), keine Regel wird
     /// abgeschaltet (poc-spec 1.4).
+    private static let demoKey = "levmi.demoMode"
     var isDemo = false {
         didSet {
             guard isDemo != oldValue else { return }
             rules = isDemo ? .demo : .standard
+            UserDefaults.standard.set(isDemo, forKey: Self.demoKey)
         }
     }
     #endif
@@ -63,6 +65,9 @@ final class AppModel {
         renderer: any SceneRenderer = SceneKitRenderer()
     ) {
         self.rules = rules
+        if UserDefaults.standard.bool(forKey: Self.demoKey) {
+            self.isDemo = true
+        }
         self.world = world ?? (try? ContentLoader.bundledWorld("werkstatt"))
             ?? World(id: "werkstatt", title: "Werkstatt", principles: [])
         self.clock = clock
