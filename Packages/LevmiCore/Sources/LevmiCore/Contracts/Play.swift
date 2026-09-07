@@ -36,14 +36,26 @@ public enum PainTile: String, Codable, CaseIterable, Sendable {
 
     /// Beschriftung der Kachel in der Auswahl.
     public var label: String {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return ""
+        switch self {
+        case .zeitWeg: return "Zeit weg"
+        case .zuVielLauwarmes: return "Zu viel Lauwarmes"
+        case .keinFortschritt: return "Kein Fortschritt"
+        case .geldReichtNicht: return "Geld reicht nicht"
+        case .immerErreichbar: return "Immer erreichbar"
+        case .allesHaengtAnMir: return "Alles hängt an mir"
+        }
     }
 
     /// Das Gegenteil, das die Umkehr-Animation zeigt.
     public var inverted: String {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return ""
+        switch self {
+        case .zeitWeg: return "Deine Zeit gehört dir."
+        case .zuVielLauwarmes: return "Nur noch Glühendes."
+        case .keinFortschritt: return "Sichtbar weiter."
+        case .geldReichtNicht: return "Mehr, als du brauchst."
+        case .immerErreichbar: return "Erreichbar, wenn du willst."
+        case .allesHaengtAnMir: return "Es läuft auch ohne dich."
+        }
     }
 }
 
@@ -79,16 +91,14 @@ public struct Rules: Sendable {
         self.minExplanationChars = minExplanationChars
     }
 
-    // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
     public static let standard = Rules(
-        appliedLock: 0, proofWindow: 0, replayMinAge: 0,
-        lightsPerNight: 0, minProofChars: 0, minExplanationChars: 0
+        appliedLock: 600, proofWindow: 86_400, replayMinAge: 86_400,
+        lightsPerNight: 2, minProofChars: 40, minExplanationChars: 60
     )
 
-    // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
     public static let demo = Rules(
-        appliedLock: 0, proofWindow: 0, replayMinAge: 0,
-        lightsPerNight: 0, minProofChars: 0, minExplanationChars: 0
+        appliedLock: 30, proofWindow: 600, replayMinAge: 60,
+        lightsPerNight: 2, minProofChars: 40, minExplanationChars: 60
     )
 }
 
@@ -119,8 +129,68 @@ public struct Befund: Codable, Sendable, Equatable {
 public enum BefundGenerator {
 
     public static func generate(state: PlayerState, now: Date) -> Befund {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return Befund(sentence: "", alternative: "", evidence: [], principleID: "")
+        let principleID: PrincipleID = state.intention?.principleID ?? "schnitt"
+
+        let lukewarmCount = state.placements.filter { $0.kind == .lukewarm }.count
+        let coldCount = state.placements.filter { $0.kind == .cold }.count
+        let glowingCount = state.placements.filter { $0.kind == .glowing }.count
+
+        let firstLukewarmIndex = state.placements.firstIndex { $0.kind == .lukewarm }
+        let firstGlowingIndex = state.placements.firstIndex { $0.kind == .glowing }
+        let firstColdIndex = state.placements.firstIndex { $0.kind == .cold }
+
+        // F2: nach der ersten lauwarmen Setzung folgt (mindestens eine) nur noch Glühendes.
+        let recognizedAfterFirstLukewarm: Bool = {
+            guard let idx = firstLukewarmIndex else { return false }
+            let rest = state.placements[(idx + 1)...]
+            return !rest.isEmpty && rest.allSatisfy { $0.kind == .glowing }
+        }()
+
+        // F3: mindestens ein Kaltes, und das erste Kalte liegt vor dem ersten Glühenden
+        // (oder es gibt gar kein Glühendes).
+        let coldBeforeGlowing = firstColdIndex.map { cold in
+            firstGlowingIndex == nil || cold < firstGlowingIndex!
+        } ?? false
+
+        let minutesSinceIntention: Int = {
+            let lastProofAt = state.progress[principleID]?.proofs.last?.submittedAt ?? now
+            let start = state.intention?.createdAt ?? state.createdAt
+            return max(0, Int(lastProofAt.timeIntervalSince(start) / 60))
+        }()
+
+        if state.pains.contains(.zuVielLauwarmes), lukewarmCount >= 1 {
+            return Befund(
+                sentence: "Du hast ‚Zu viel Lauwarmes‘ angekreuzt — und heute Nacht trotzdem \(lukewarmCount)-mal Lauwarmes gefüttert.",
+                alternative: "Vielleicht ist \(lukewarmCount)-mal einfach zu wenig Übung, nicht zu viel Ausrede.",
+                evidence: ["lauwarm: \(lukewarmCount)", "pain: zuVielLauwarmes"],
+                principleID: principleID
+            )
+        }
+
+        if recognizedAfterFirstLukewarm {
+            return Befund(
+                sentence: "Du hast das Lauwarme nach dem ersten Mal erkannt. Dein Beweis kam \(minutesSinceIntention) Minuten nach der Absicht.",
+                alternative: "Vielleicht war es kein Erkennen — nur Zufall, dass danach nichts Lauwarmes mehr kam.",
+                evidence: ["lauwarm: 1", "minuten: \(minutesSinceIntention)"],
+                principleID: principleID
+            )
+        }
+
+        if lukewarmCount == 0, coldBeforeGlowing {
+            return Befund(
+                sentence: "Du sagst Nein, bevor du das Glühende suchst. Das kostet nichts — und bringt nichts.",
+                alternative: "Vielleicht war das Nein nicht Angst vor dem Glühenden, sondern eine kluge Auswahl.",
+                evidence: ["cold: \(coldCount)"],
+                principleID: principleID
+            )
+        }
+
+        return Befund(
+            sentence: "Zwei Lichter, zwei Treffer. Die Frage ist nicht, ob du erkennst, sondern ob du morgen kippst, was du erkannt hast.",
+            alternative: "Vielleicht zählt nicht die Zahl der Treffer, sondern dass du beide gefunden hast.",
+            evidence: ["glowing: \(glowingCount)"],
+            principleID: principleID
+        )
     }
 }
 
@@ -237,17 +307,68 @@ public enum GameEngine {
         world: World,
         rules: Rules
     ) -> (PlayerState, [Effect]) {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return (state, [])
+        // Regeln 0 und 20 gelten unabhängig von der Phase.
+        switch action {
+        case .appOpened:
+            return reduceAppOpened(state, clock: clock, world: world, rules: rules)
+        case .reset:
+            return reduceReset(clock: clock, rules: rules)
+        default:
+            break
+        }
+
+        switch (state.phase, action) {
+        case (.firstLight, .lightDropped):
+            return reduceLightDropped(state, clock: clock)
+
+        case (.nodes, .lightPlaced(let nodeID)):
+            return reduceLightPlaced(state, nodeID: nodeID, clock: clock)
+
+        case (.roots, .sunPulled(let pulled)):
+            return reduceSunPulledRoots(state, pulled)
+
+        case (.breakthrough, .breakthroughFinished):
+            return reduceBreakthroughFinished(state)
+
+        case (.onboardingPain, .painSelected(let tiles)):
+            return reducePainSelected(state, tiles)
+
+        case (.onboardingWhy, .whyEntered(let text)):
+            return reduceWhyEntered(state, text, clock: clock)
+
+        case (.intention, .intentionChosen(let intention)):
+            return reduceIntentionChosen(state, intention)
+
+        case (.closed, .closeForToday):
+            return reduceCloseForToday(state, clock: clock)
+
+        case (.proof, .proofSubmitted(let text)):
+            return reduceProofSubmitted(state, text, clock: clock, world: world, rules: rules)
+
+        case (.dawnProof, .sunPulled(let pulled)):
+            return reduceSunPulledDawnProof(state, pulled)
+
+        case (.cost, .costEntered(let text)):
+            return reduceCostEntered(state, text, clock: clock)
+
+        case (.befund, .befundAnswered(let accepted)):
+            return reduceBefundAnswered(state, accepted)
+
+        case (.idle, .dismissOwnSentence):
+            return reduceDismissOwnSentence(state)
+
+        default:
+            // Regel 21: eine Aktion, die in dieser Phase nicht definiert ist.
+            return (state, [])
+        }
     }
 
     public static func initial(clock: any Clock, rules: Rules) -> PlayerState {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return PlayerState(
-            phase: .idle,
-            createdAt: Date(timeIntervalSince1970: 0),
-            lastOpenedAt: Date(timeIntervalSince1970: 0),
-            lightsRemaining: 0
+        PlayerState(
+            phase: .firstLight,
+            createdAt: clock.now,
+            lastOpenedAt: clock.now,
+            lightsRemaining: rules.lightsPerNight
         )
     }
 }

@@ -61,8 +61,25 @@ public struct SceneSnapshot: Codable, Sendable, Equatable {
 public enum SceneProjection {
 
     public static func snapshot(of state: PlayerState) -> SceneSnapshot {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return SceneSnapshot()
+        let roots: [RootStrength] = state.litNodeIDs.map { id in
+            switch state.placements.first(where: { $0.nodeID == id })?.kind {
+            case .glowing: return .strong
+            default: return .weak
+            }
+        }
+        return SceneSnapshot(
+            islandRevealed: state.phase != .firstLight,
+            nodes: state.nodes,
+            litNodeIDs: state.litNodeIDs,
+            roots: roots,
+            lightVisible: (state.phase == .firstLight || state.phase == .nodes) && state.lightsRemaining > 0,
+            sunProgress: state.sunProgress,
+            sunVisible: state.phase == .roots || state.phase == .dawnProof,
+            fogLevel: state.days > 0 ? 1 : 0,
+            lightTile: state.lightColorTile,
+            rootWindow: state.phase == .waiting,
+            breakthroughTier: nil
+        )
     }
 }
 
