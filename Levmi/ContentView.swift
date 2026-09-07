@@ -1,25 +1,15 @@
 import SwiftUI
-import LevmiCore
 
 struct ContentView: View {
+    @State private var appModel = AppModel()
+
     var body: some View {
-        ZStack(alignment: .top) {
-            SceneKitSpikeView()
-                .ignoresSafeArea()
-            VStack(spacing: 6) {
-                Text("LEVMI")
-                    .font(.system(size: 40, weight: .black, design: .rounded))
-                    .tracking(6)
-                Text("Spike · SceneKit · HDR Bloom · Core \(LevmiCore.version)")
-                    .font(.footnote.monospaced())
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 14)
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
-            .padding(.top, 12)
-        }
-        .accessibilityIdentifier("root")
+        // TEMPORÄR während der Szenen-Abnahme auf IslandDemoView umgeschaltet — GameEngine/
+        // SceneProjection sind noch im Umbau (Stub-Implementierungen, siehe LevmiCore), daher lässt
+        // sich die Choreografie darüber gerade nicht deterministisch prüfen. Vor Abgabe zurück auf
+        // `GameView(appModel: appModel)` stellen, sobald die Domain steht.
+        IslandDemoView()
+            .accessibilityIdentifier("root")
     }
 }
 
