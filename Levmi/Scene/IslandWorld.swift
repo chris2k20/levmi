@@ -1,25 +1,45 @@
-import SceneKit
+@preconcurrency import SceneKit
 import UIKit
+import MediaAccessibility
 import simd
 
 /// Baut und besitzt die komplette SceneKit-Welt der Insel: alle Knoten-Referenzen, Materialien und
 /// Partikel-Vorlagen. `IslandWorld` kennt nur Rendering — keine Spielregeln, keine Persistenz.
 /// `IslandChoreography.swift` (Erweiterung dieser Klasse) bedient die eigentlichen `SceneCommand`s.
 ///
-/// Fünf Knoten pro Nacht: zwei `glowing`, zwei `lukewarm`, ein `cold` (siehe poc-spec.md §1.1).
-/// `glowing` und `lukewarm` sehen bis zur Setzung bewusst gleich verführerisch aus — nur Tonhöhe
-/// (Audio) und ein leicht unregelmäßiger Puls unterscheiden sie. Keine Sanduhr vorab.
+/// Fünf Knoten pro Nacht, adressiert über IDs `0…4` (siehe `islandNodeOrder`). Welche ID welche
+/// Familie (`"glowing"` | `"cold"` | `"lukewarm"`) trägt, entscheidet die Domain und teilt es über
+/// `presentNodes(_:)` bzw. `restore(_:)` mit — die Insel selbst legt sich nicht vorab fest.
+/// `glowing` und `lukewarm` sehen bis zur Setzung bewusst gleich verführerisch aus.
 @MainActor
 final class IslandWorld {
-    /// Eine platzierte Knoten-Instanz auf der Insel. `id` ist eindeutig (z. B. "glowing1",
-    /// "lukewarm2"), `family` ("glowing" | "cold" | "lukewarm") bestimmt Optik/Audio-Familie.
-    struct IslandNode {
-        let id: String
-        let family: String
+    /// Eine der fünf festen Positionen auf dem unregelmäßigen Ring. Existiert unabhängig davon,
+    /// welche Familie später hineingelegt wird (das entscheidet `presentNodes`/`restore`).
+    struct NodeSlot {
+        let id: Int
         let crystalNode: SCNNode
         let material: SCNMaterial
         let ringTicks: [SCNNode]
         let ringMaterials: [SCNMaterial]
+        let rootSegments: [SCNNode]
+        let rootMaterial: SCNMaterial
+    }
+
+    /// Für `restore(_:)` — kompletter Szenenzustand, ohne Animation gesetzt (App-Kill → Wiederherstellung).
+    struct Snapshot {
+        struct NodeSpec { let id: Int; let kind: String }
+        struct RootState { let nodeID: Int; let strong: Bool }
+        var islandRevealed: Bool
+        var nodes: [NodeSpec]
+        var litNodeIDs: Set<Int>
+        var roots: [RootState]
+        var lightVisible: Bool
+        var sunVisible: Bool
+        var sunProgress: Double
+        var fogLevel: Int
+        var lightTint: String?
+        var rootWindow: Bool
+        var breakthroughTier: String?
     }
 
     let scene = SCNScene()
@@ -39,27 +59,28 @@ final class IslandWorld {
     let islandRockGroup = SCNNode()    // nur die Gesteinsfragmente (für Transluzenz)
     var islandRockMaterials: [SCNMaterial] = []
 
-    // Fünf Knoten, adressiert über eindeutige IDs.
-    private(set) var islandNodes: [String: IslandNode] = [:]
-    let islandNodeOrder: [String] = ["glowing1", "lukewarm1", "cold1", "glowing2", "lukewarm2"]
+    // Fünf Knoten-Slots (IDs 0…4), Familie wird erst über `presentNodes`/`restore` zugewiesen.
+    private(set) var nodeSlots: [Int: NodeSlot] = [:]
+    let islandNodeOrder: [Int] = [0, 1, 2, 3, 4]
+    var nodeFamilies: [Int: String] = [:]
 
     // Choreografie-Buchführung (nur Rendering-Zustand, keine Spielregeln).
-    var lastTouchedNodeID: String?
-    var chargeProgress: [String: Double] = [:]
-    var settledNodeIDs: Set<String> = []
+    var chargeProgress: [Int: Double] = [:]
+    var settledNodeIDs: Set<Int> = []
+    /// Merkt sich pro Knoten, ob seine Wurzel stark (gold) oder schwach (grau) ist — für den
+    /// Rücksprung, wenn `rootWindow(visible: false)` den Puls beendet.
+    var rootStrength: [Int: Bool] = [:]
     var currentLightColor: UIColor = Palette.lightWarmDefault
     var currentFogLevel: Int = 0
+    var sunProgressHighWater: Double = 0
+    /// Wird am Ende von `breakthrough(tier:)` aufgerufen — die Domain wartet darauf, bevor sie weiterschaltet.
+    var onBreakthroughFinished: (() -> Void)?
 
     // Spieler-Licht
     let playerLightNode = SCNNode()
     let playerLight = SCNLight()
     let playerLightMaterial = SCNMaterial()
-    static let playerLightStartPosition = SCNVector3(0, 3.3, 0)
-
-    // Wurzelnetz
-    let rootsNode = SCNNode()
-    let rootsMaterial = SCNMaterial()
-    var rootSegments: [SCNNode] = []
+    static let playerLightStartPosition = SCNVector3(0, 2.0, 0)
 
     // Sonne
     let sunNode = SCNNode()
@@ -67,6 +88,8 @@ final class IslandWorld {
     let sunMaterial = SCNMaterial()
     static let sunHiddenY: Float = -3.2
     static let sunRisenY: Float = 9.5
+    static let sunZ: Float = -30
+    static let keyLightNightColor = UIColor(red: 1, green: 0.86, blue: 0.68, alpha: 1)
 
     // Durchbruch-Trieb
     let sproutNode = SCNNode()
@@ -83,29 +106,47 @@ final class IslandWorld {
     let breakthroughBurstTemplate = SCNParticleSystem()
 
     // Kamera-Positionen (siehe IslandChoreography für die Animationen dazwischen)
-    static let cameraClosePosition = SCNVector3(0, 1.55, 4.6)
-    static let cameraOrbitPosition = SCNVector3(0, 2.5, 8.0)
-    static let cameraDivePosition = SCNVector3(0, 0.3, 3.35)
-    static let cameraBreakthroughPosition = SCNVector3(0, 1.85, 3.0)
-    static let cameraLookTarget = SCNVector3(0, 1.05, 0)
+    // art-direction.md: Kamera-Höhe 1,6 über dem Wasser, Blick ~8° nach unten, Insel auf
+    // 8–10 Einheiten Distanz (teilweise im Nebel, klein und fern statt Modell-Viewer-Nähe).
+    static let cameraClosePosition = SCNVector3(0, 1.5, 7.0)
+    static let cameraOrbitPosition = SCNVector3(0, 1.6, 9.0)
+    static let cameraDivePosition = SCNVector3(0, 0.1, 3.0)
+    static let cameraBreakthroughPosition = SCNVector3(0, 1.4, 5.0)
+    static let cameraLookTarget = SCNVector3(0, 0.6, 0)
 
     static let islandHiddenY: Float = 0.05
     static let islandRevealedY: Float = 1.15
     static let fogLevelHeights: [Float] = [0.55, 0.38, 0.21, 0.04]
 
+    /// Zielgröße des Triebs je Tier (siehe `breakthrough(tier:)`); "second" > "full" > "half" > "thin".
+    static let sproutHiddenScale = SCNVector3(0.0006, 0.0027, 0.0006)
+    static func sproutScale(forTier tier: String) -> SCNVector3 {
+        switch tier {
+        case "thin": return SCNVector3(0.22, 1.5, 0.22)
+        case "half": return SCNVector3(0.32, 2.0, 0.32)
+        case "second": return SCNVector3(0.58, 2.6, 0.58)
+        default: return SCNVector3(0.4, 1.8, 0.4) // "full"
+        }
+    }
+
+    /// Reduce Motion / Dim Flashing Lights zentral abfragbar — siehe `IslandChoreography`.
+    var reduceMotionEnabled: Bool { UIAccessibility.isReduceMotionEnabled }
+    /// `MADimFlashingLightsEnabled()` (MediaAccessibility) — es gibt kein `UIAccessibility`-Äquivalent.
+    var dimFlashingLightsEnabled: Bool { MADimFlashingLightsEnabled() }
+
     init() {
-        setupBackgroundAndFog()
         waterNode = Self.makeWaterNode()
         (fogDiscNode, fogDiscMaterial) = Self.makeFogDisc()
+        setupBackgroundAndFog()
         scene.rootNode.addChildNode(waterNode)
         scene.rootNode.addChildNode(fogDiscNode)
 
         scene.rootNode.addChildNode(islandRig)
         islandRig.addChildNode(islandRockGroup)
         islandRig.position = SCNVector3(0, Self.islandHiddenY, 0)
+        islandRig.isHidden = true // zusätzlich zur Position verdeckt, bis revealIsland() sie zeigt
         buildIslandRock()
-        buildIslandNodes()
-        buildRoots()
+        buildNodeSlots()
         buildSprout()
 
         buildPlayerLight()
@@ -119,22 +160,33 @@ final class IslandWorld {
     // MARK: - Hintergrund / Fog
 
     private func setupBackgroundAndFog() {
-        scene.background.contents = Palette.waterDeep
-        scene.fogColor = Palette.fogNear
-        scene.fogStartDistance = 8
-        scene.fogEndDistance = 30
-        scene.fogDensityExponent = 1.6
+        // Verlauf statt Flächenfarbe (art-direction.md §1): unten am dunkelsten, zum Horizont ein
+        // Hauch heller, oben wieder dunkler — kein harter Bruch zwischen Himmel und Nebel.
+        scene.background.contents = IslandGeometry.verticalGradient(
+            top: Palette.skyTop, middle: Palette.skyHorizon, bottom: Palette.skyBottom, size: CGSize(width: 4, height: 512)
+        )
+        scene.fogColor = Palette.fogColor
+        scene.fogStartDistance = 6
+        scene.fogEndDistance = 22
+        scene.fogDensityExponent = 1.8
     }
 
     private static func makeWaterNode() -> SCNNode {
         let floor = SCNFloor()
-        floor.reflectivity = 0.35
-        floor.reflectionFalloffEnd = 9
+        // art-direction.md nennt 0.5/8 — bei der flachen Kamera (Höhe 1.6) streckt das die
+        // Spiegelung des Lichts zu einer langen, ausgebrannten Lichtgasse statt eines kompakten
+        // zweiten Punkts. Gedämpft, bis „Kern + Spiegelung“ statt „Lichtsäule“ zu sehen ist.
+        floor.reflectivity = 0.26
+        floor.reflectionFalloffEnd = 4
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
-        material.diffuse.contents = Palette.waterDeep
-        material.roughness.contents = 0.15
-        material.metalness.contents = 0.2
+        material.diffuse.contents = Palette.waterSurface
+        // Ursache der "Lichtgasse" war nicht `reflectivity` (die Spiegel-Kopie der Szene), sondern
+        // die direkte PBR-Spekularantwort auf das 900-lm-Punktlicht bei niedriger Rauheit — bei
+        // flachem Kamerawinkel zieht sich ein glänziger Specular-Highlight bis zum Betrachter.
+        // Höhere Rauheit verteilt ihn zu einem weichen Schimmer statt einer harten Säule.
+        material.roughness.contents = 0.3
+        material.metalness.contents = 0.1
         floor.materials = [material]
         return SCNNode(geometry: floor)
     }
@@ -143,11 +195,11 @@ final class IslandWorld {
         let plane = SCNPlane(width: 60, height: 60)
         let material = SCNMaterial()
         material.lightingModel = .constant
-        material.diffuse.contents = Palette.fogNear
-        material.emission.contents = Palette.fogNear
-        material.transparency = 0.32
+        material.diffuse.contents = Palette.fogColor
+        material.emission.contents = UIColor.black // rein diffus: darf nie selbst bloomen
+        material.transparency = 0.22
         material.isDoubleSided = true
-        material.blendMode = .add
+        material.blendMode = .alpha
         material.writesToDepthBuffer = false
         plane.materials = [material]
         let node = SCNNode(geometry: plane)
@@ -169,13 +221,19 @@ final class IslandWorld {
             (SCNVector3(0.6, 0.12, -0.25), 0.36, SCNVector3(-0.1, 2.0, 0.2)),
             (SCNVector3(-0.15, 0.18, 0.05), 0.3, SCNVector3(0.2, -1.1, -0.25)),
         ]
-        for (position, radius, tilt) in layout {
+        // "Insel nimmt ~35 % der Breite ein" (art-direction.md) — bei der Distanz aus
+        // cameraOrbitPosition (9 Einheiten) muss der Cluster kleiner sein als die reinen
+        // Rohradien; 0.7 bringt ihn in die Nähe der Zielgröße, ohne jede Zahl neu zu erfinden.
+        let clusterScale: Float = 0.7
+        for (rawPosition, rawRadius, tilt) in layout {
+            let position = SCNVector3(rawPosition.x * clusterScale, rawPosition.y * clusterScale, rawPosition.z * clusterScale)
+            let radius = rawRadius * clusterScale
             let node = SCNNode(geometry: IslandGeometry.flatShadedIcosahedron(radius: radius))
             let material = SCNMaterial()
             material.lightingModel = .physicallyBased
             material.diffuse.contents = Palette.islandRock
             material.roughness.contents = 0.85
-            material.metalness.contents = 0.05
+            material.metalness.contents = 0.0
             node.geometry?.materials = [material]
             node.position = position
             node.eulerAngles = tilt
@@ -184,71 +242,74 @@ final class IslandWorld {
         }
     }
 
-    // MARK: - Fünf Knoten
+    // MARK: - Fünf Knoten-Slots
 
-    private func buildIslandNodes() {
+    private func buildNodeSlots() {
         // Unregelmäßiger Ring: Winkel und Radius bewusst nicht gleichmäßig verteilt.
-        let slots: [(id: String, angleDeg: Float, radius: Float, height: Float)] = [
-            ("glowing1", 18, 0.95, 0.62),
-            ("lukewarm1", 95, 0.72, 0.58),
-            ("cold1", 152, 0.88, 0.5),
-            ("glowing2", 231, 0.68, 0.6),
-            ("lukewarm2", 308, 0.9, 0.55),
+        // Höhe bewusst ÜBER dem höchsten Gesteinspunkt (~0.47 nach dem 0.7-Schrumpfen) und Radius
+        // näher am Zentrum: die Knoten sollen wie eine kleine Krone auf dem Cluster sitzen, nicht
+        // an einzelnen Gesteinsstücken hängen, die je nach Winkel gar nicht darunterliegen.
+        let slots: [(id: Int, angleDeg: Float, radius: Float, height: Float)] = [
+            (0, 18, 0.42, 0.56),
+            (1, 95, 0.32, 0.52),
+            (2, 152, 0.4, 0.58),
+            (3, 231, 0.3, 0.5),
+            (4, 308, 0.38, 0.54),
         ]
         for slot in slots {
             let rad = slot.angleDeg * .pi / 180
             let position = SCNVector3(cos(rad) * slot.radius, slot.height, sin(rad) * slot.radius)
-            let family = Self.family(ofNodeID: slot.id)
-            let (node, material) = Self.makeCrystalNode(family: family)
-            node.position = position
-            node.name = slot.id
-            islandRockGroup.addChildNode(node)
-            runIdlePulse(on: node, material: material, family: family)
+
+            // r 0.11 statt der 0.16 aus art-direction.md: im selben 0.7-Maßstab wie der geschrumpfte
+            // Gesteins-Cluster (siehe buildIslandRock), sonst wirken die Knoten überdimensioniert.
+            let crystalNode = SCNNode(geometry: IslandGeometry.flatShadedIcosahedron(radius: 0.11))
+            let material = SCNMaterial()
+            material.lightingModel = .physicallyBased
+            material.roughness.contents = 0.2
+            material.metalness.contents = 0.35
+            crystalNode.geometry?.materials = [material]
+            crystalNode.position = position
+            crystalNode.name = "node\(slot.id)"
+            crystalNode.isHidden = true
+            crystalNode.opacity = 0
+            islandRockGroup.addChildNode(crystalNode)
 
             let (ticks, tickMaterials) = Self.makeChargeRing(segments: 8)
-            for tick in ticks { node.addChildNode(tick) }
+            for tick in ticks { crystalNode.addChildNode(tick) }
 
-            islandNodes[slot.id] = IslandNode(
-                id: slot.id, family: family, crystalNode: node, material: material,
-                ringTicks: ticks, ringMaterials: tickMaterials
+            let (rootSegments, rootMaterial) = Self.buildRootCluster(around: position, seed: slot.id)
+            for segment in rootSegments { islandRockGroup.addChildNode(segment) }
+
+            nodeSlots[slot.id] = NodeSlot(
+                id: slot.id, crystalNode: crystalNode, material: material,
+                ringTicks: ticks, ringMaterials: tickMaterials,
+                rootSegments: rootSegments, rootMaterial: rootMaterial
             )
         }
     }
 
-    /// Leitet die Familie ("glowing" | "cold" | "lukewarm") aus einer Knoten-ID wie "glowing2" ab.
-    static func family(ofNodeID id: String) -> String {
-        String(id.reversed().drop(while: { $0.isNumber }).reversed())
-    }
-
-    private static func makeCrystalNode(family: String) -> (SCNNode, SCNMaterial) {
-        let node = SCNNode(geometry: IslandGeometry.flatShadedIcosahedron(radius: 0.18))
-        let material = SCNMaterial()
-        material.lightingModel = .physicallyBased
-        material.roughness.contents = 0.2
-        material.metalness.contents = 0.35
+    /// Konfiguriert Optik + Leerlauf-Puls eines Slots für seine Familie. Wird von `presentNodes`
+    /// und `restore` aufgerufen — niemals vorab am lauwarmen Knoten mit einer Warnfarbe/Sanduhr.
+    func configureCrystal(slot: NodeSlot, family: String) {
+        slot.crystalNode.removeAction(forKey: "pulse")
+        slot.crystalNode.removeAction(forKey: "shimmer")
         switch family {
         case "cold":
-            material.diffuse.contents = Palette.nodeCold
-            material.emission.contents = UIColor.black
-            material.emission.intensity = 0
-        default: // glowing & lukewarm: bewusst dieselbe warme Familie
-            material.diffuse.contents = Palette.nodeWarmFamily
-            material.emission.contents = Palette.nodeWarmFamily
-            material.emission.intensity = 1.1
-        }
-        node.geometry?.materials = [material]
-        return (node, material)
-    }
-
-    private func runIdlePulse(on node: SCNNode, material: SCNMaterial, family: String) {
-        switch family {
+            slot.material.diffuse.contents = Palette.nodeCold
+            slot.material.emission.contents = UIColor.black
+            slot.material.emission.intensity = 0
         case "glowing":
-            node.runAction(Self.pulseAction(period: 1.7, min: 0.9, max: 1.6) { material.emission.intensity = $0 }, forKey: "pulse")
-        case "lukewarm":
-            node.runAction(Self.irregularPulseAction(period: 1.4, min: 0.85, max: 1.55) { material.emission.intensity = $0 }, forKey: "pulse")
-            node.runAction(Self.shimmerAction(period: 3.1, colorA: Palette.nodeWarmFamily, colorB: Palette.nodeWarmShimmer) { material.emission.contents = $0 }, forKey: "shimmer")
-        default:
-            break // cold: kein Puls, keine Emission
+            slot.material.diffuse.contents = Palette.nodeGlowing
+            slot.material.emission.contents = Palette.nodeGlowing
+            slot.material.emission.intensity = 1.4
+            // 0,5 Hz — ruhig und stetig (Erkennungsmerkmal, siehe hintGlowing()).
+            slot.crystalNode.runAction(Self.pulseAction(period: 2.0, min: 1.0, max: 1.4) { [material = slot.material] in material.emission.intensity = $0 }, forKey: "pulse")
+        default: // "lukewarm": bewusst dieselbe warme Familie wie glowing, nur Ton + Puls verraten sie
+            slot.material.diffuse.contents = Palette.nodeLukewarm
+            slot.material.emission.contents = Palette.nodeLukewarm
+            slot.material.emission.intensity = 1.2
+            slot.crystalNode.runAction(Self.irregularPulseAction(period: 1.4, min: 0.75, max: 1.2) { [material = slot.material] in material.emission.intensity = $0 }, forKey: "pulse")
+            slot.crystalNode.runAction(Self.shimmerAction(period: 3.1, colorA: Palette.nodeLukewarm, colorB: Palette.nodeWarmShimmer) { [material = slot.material] in material.emission.contents = $0 }, forKey: "shimmer")
         }
     }
 
@@ -259,7 +320,7 @@ final class IslandWorld {
         var materials: [SCNMaterial] = []
         for i in 0..<segments {
             let angle = Float(i) / Float(segments) * 2 * .pi
-            let tick = SCNNode(geometry: SCNBox(width: 0.05, height: 0.14, length: 0.03, chamferRadius: 0.01))
+            let tick = SCNNode(geometry: SCNBox(width: 0.035, height: 0.1, length: 0.02, chamferRadius: 0.008))
             let material = SCNMaterial()
             material.lightingModel = .constant
             material.diffuse.contents = UIColor.white
@@ -267,13 +328,39 @@ final class IslandWorld {
             material.emission.intensity = 0
             material.transparency = 0
             tick.geometry?.materials = [material]
-            let radius: Float = 0.34
+            let radius: Float = 0.24
             tick.position = SCNVector3(cos(angle) * radius, 0, sin(angle) * radius)
             tick.eulerAngles = SCNVector3(0, -angle, 0)
             ticks.append(tick)
             materials.append(material)
         }
         return (ticks, materials)
+    }
+
+    /// Eine kleine Wurzel-Gruppe, die von `position` aus fächerförmig nach außen/unten wächst.
+    /// Anfangs Skalierung ~0. Farbe/Emission wird erst von `showRoots`/`restore` gesetzt.
+    private static func buildRootCluster(around position: SCNVector3, seed: Int, segmentCount: Int = 5) -> ([SCNNode], SCNMaterial) {
+        let material = SCNMaterial()
+        material.lightingModel = .physicallyBased
+        material.diffuse.contents = Palette.rootsGold
+        material.roughness.contents = 0.35
+        material.metalness.contents = 0.5
+        var segments: [SCNNode] = []
+        for i in 0..<segmentCount {
+            let angle = Float(i) * 2.399963 + Float(seed) * 1.1
+            // Kurz und nahezu senkrecht nach unten (Knoten sitzen jetzt hoch über dem Cluster, siehe
+            // buildNodeSlots) — die Wurzeln sollen im Gestein verschwinden, nicht seitlich abstehen.
+            let length: Float = 0.16 + Float((i * 23 + seed * 7) % 4) * 0.035
+            let cylinder = SCNCylinder(radius: 0.014, height: CGFloat(length))
+            cylinder.materials = [material]
+            let segment = SCNNode(geometry: cylinder)
+            segment.pivot = SCNMatrix4MakeTranslation(0, length / 2, 0)
+            segment.eulerAngles = SCNVector3(-Float.pi / 2 + Float(i) * 0.05, angle, 0)
+            segment.position = position
+            segment.scale = SCNVector3(0.001, 0.001, 0.001)
+            segments.append(segment)
+        }
+        return (segments, material)
     }
 
     // MARK: - Spieler-Licht
@@ -283,15 +370,22 @@ final class IslandWorld {
         playerLightMaterial.lightingModel = .constant
         playerLightMaterial.diffuse.contents = Palette.lightWarmDefault
         playerLightMaterial.emission.contents = Palette.lightWarmDefault
+        playerLightMaterial.emission.intensity = 2.0
         sphere.materials = [playerLightMaterial]
         playerLightNode.geometry = sphere
         playerLightNode.name = "playerLight"
         playerLightNode.position = Self.playerLightStartPosition
 
+        // art-direction.md: kleiner warmer Kern, aber ein "echtes" Punktlicht (900 lm) — das trägt
+        // erst zusammen mit der GEDRÜCKTEN Exposure (-0.4) und dem hohen Bloom-Threshold (0.65):
+        // dunkle Welt + helle Quelle, nicht mittelhelle Welt + Übersteuerung.
         playerLight.type = .omni
         playerLight.color = Palette.lightWarmDefault
-        playerLight.intensity = 320
-        playerLight.attenuationEndDistance = 6
+        // 900 lm (Briefwert) sättigt bei niedriger Kamera das unendliche Wasser zu einer riesigen
+        // Specular-Wolke, weil das Licht selbst über seine eigene Emission leuchtet, nicht über
+        // diese Punktlicht-Intensität — die muss nur die NAHE Umgebung sichtbar anfärben.
+        playerLight.intensity = 90
+        playerLight.attenuationEndDistance = 4
         let lightHolder = SCNNode()
         lightHolder.light = playerLight
         playerLightNode.addChildNode(lightHolder)
@@ -301,51 +395,20 @@ final class IslandWorld {
         scene.rootNode.addChildNode(playerLightNode)
     }
 
-    // MARK: - Wurzelnetz
-
-    private func buildRoots() {
-        rootsMaterial.lightingModel = .physicallyBased
-        rootsMaterial.diffuse.contents = Palette.rootsGold
-        rootsMaterial.emission.contents = Palette.rootsGold
-        rootsMaterial.emission.intensity = 0.55
-        rootsMaterial.roughness.contents = 0.35
-        rootsMaterial.metalness.contents = 0.5
-
-        islandRockGroup.addChildNode(rootsNode)
-        rootsNode.position = SCNVector3(0, -0.35, 0)
-
-        let count = 11
-        for i in 0..<count {
-            let angle = Float(i) * 2.399963 // Goldwinkel — wirkt organischer als gleichmäßige Teilung
-            let length = 0.55 + Float((i * 37) % 5) * 0.12
-            let radius: CGFloat = 0.035
-            let cylinder = SCNCylinder(radius: radius, height: CGFloat(length))
-            cylinder.materials = [rootsMaterial]
-            let segment = SCNNode(geometry: cylinder)
-            // Zylinder-Achse liegt entlang Y; nach außen/unten kippen und um den Ursprung drehen.
-            segment.pivot = SCNMatrix4MakeTranslation(0, Float(length) / 2, 0)
-            segment.eulerAngles = SCNVector3(-Float.pi / 2.6, angle, 0)
-            segment.position = SCNVector3(0, 0, 0)
-            segment.scale = SCNVector3(0.001, 0.001, 0.001)
-            rootsNode.addChildNode(segment)
-            rootSegments.append(segment)
-        }
-    }
-
     // MARK: - Sonne
 
     private func buildSun() {
-        let sphere = SCNSphere(radius: 0.55)
+        let sphere = SCNSphere(radius: 0.9)
         sunMaterial.lightingModel = .constant
-        sunMaterial.diffuse.contents = Palette.sunWarm
-        sunMaterial.emission.contents = Palette.sunWarm
+        sunMaterial.diffuse.contents = Palette.sunRising
+        sunMaterial.emission.contents = Palette.sunRising
         sphere.materials = [sunMaterial]
         sunNode.geometry = sphere
         sunNode.name = "sun"
-        sunNode.position = SCNVector3(0, Self.sunHiddenY, -34)
+        sunNode.position = SCNVector3(0, Self.sunHiddenY, Self.sunZ)
 
         sunLight.type = .omni
-        sunLight.color = Palette.sunWarm
+        sunLight.color = Palette.sunRising
         sunLight.intensity = 0
         sunLight.attenuationEndDistance = 60
         let holder = SCNNode()
@@ -370,21 +433,20 @@ final class IslandWorld {
         geometry.materials = [sproutMaterial]
         sproutNode.geometry = geometry
         sproutNode.position = SCNVector3(0, 0.35, 0)
-        sproutNode.scale = Self.sproutHiddenScale // anfangs Skalierung ~0
+        sproutNode.scale = Self.sproutHiddenScale
+        sproutNode.isHidden = true
         islandRockGroup.addChildNode(sproutNode)
     }
-
-    /// Turm-Silhouette des Triebs: schmal und hoch. `tier2` ist deutlich größer (siehe `breakthrough(tier:)`).
-    static let sproutTier1Scale = SCNVector3(0.4, 1.8, 0.4)
-    static let sproutTier2Scale = SCNVector3(0.58, 2.6, 0.58)
-    static let sproutHiddenScale = SCNVector3(0.0006, 0.0027, 0.0006)
 
     // MARK: - Licht
 
     private func buildLights() {
+        // art-direction.md nennt 60 (Nacht) → 450 (voller Aufstieg); 60 ließ die dunkle Insel
+        // (#14162A) komplett ohne lesbare Kante verschwinden, daher angehoben auf 130 (siehe
+        // sunProgress/dawn/restore — dieselbe Zahl an allen drei Stellen).
         keyLight.type = .directional
-        keyLight.intensity = 480
-        keyLight.color = UIColor(red: 1, green: 0.86, blue: 0.68, alpha: 1)
+        keyLight.intensity = 130
+        keyLight.color = Self.keyLightNightColor
         keyLight.castsShadow = true
         keyLight.shadowMode = .deferred
         keyLight.shadowSampleCount = 4
@@ -396,8 +458,8 @@ final class IslandWorld {
 
         let ambient = SCNLight()
         ambient.type = .ambient
-        ambient.intensity = 55
-        ambient.color = UIColor(red: 0.35, green: 0.42, blue: 0.6, alpha: 1)
+        ambient.intensity = 22
+        ambient.color = UIColor(red: 0.3, green: 0.36, blue: 0.52, alpha: 1)
         ambientLightNode.light = ambient
         scene.rootNode.addChildNode(ambientLightNode)
     }
@@ -405,27 +467,33 @@ final class IslandWorld {
     // MARK: - Kamera
 
     private func buildCamera() {
-        camera.fieldOfView = 52
+        // Werte 1:1 aus docs/design/art-direction.md.
+        camera.fieldOfView = 48
         camera.zNear = 0.1
         camera.zFar = 120
         camera.wantsHDR = true
-        camera.bloomIntensity = 1.6
-        camera.bloomThreshold = 0.5
-        camera.bloomBlurRadius = 28
-        camera.vignettingIntensity = 0.9
-        camera.vignettingPower = 1.3
-        camera.screenSpaceAmbientOcclusionIntensity = 0.9
+        camera.bloomIntensity = 1.2
+        camera.bloomThreshold = 0.65
+        camera.bloomBlurRadius = 22
+        camera.vignettingIntensity = 1.0
+        camera.vignettingPower = 1.4
+        camera.screenSpaceAmbientOcclusionIntensity = 0.6
         camera.screenSpaceAmbientOcclusionRadius = 2
         camera.wantsDepthOfField = true
-        camera.focusDistance = 5.5
-        camera.fStop = 4.2
-        camera.exposureOffset = 0.1
+        camera.focusDistance = 8.5 // auf die Insel, siehe cameraOrbitPosition
+        camera.fStop = 5.6
+        camera.exposureOffset = -0.4
+        camera.averageGray = 0.12
+        camera.whitePoint = 1.0
+        camera.wantsExposureAdaptation = false // fester Look statt automatischer Anpassung
         cameraNode.camera = camera
         cameraNode.position = Self.cameraClosePosition
         cameraNode.look(at: Self.cameraLookTarget)
         orbitRig.addChildNode(cameraNode)
         scene.rootNode.addChildNode(orbitRig)
-        orbitRig.runAction(.repeatForever(.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 70)), forKey: "drift")
+        if !reduceMotionEnabled {
+            orbitRig.runAction(.repeatForever(.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 70)), forKey: "drift")
+        }
     }
 
     // MARK: - Partikel
@@ -435,9 +503,9 @@ final class IslandWorld {
         ambientSparks.particleLifeSpan = 7
         ambientSparks.particleLifeSpanVariation = 2.5
         ambientSparks.emitterShape = SCNSphere(radius: 4.5)
-        ambientSparks.particleSize = 0.045
-        ambientSparks.particleSizeVariation = 0.02
-        ambientSparks.particleColor = UIColor(red: 0.75, green: 0.88, blue: 1, alpha: 0.9)
+        ambientSparks.particleSize = 0.032
+        ambientSparks.particleSizeVariation = 0.015
+        ambientSparks.particleColor = UIColor(red: 0.55, green: 0.65, blue: 0.78, alpha: 0.35)
         ambientSparks.blendMode = .additive
         ambientSparks.isAffectedByGravity = false
         ambientSparks.particleVelocity = 0.12
@@ -492,10 +560,12 @@ final class IslandWorld {
 
     // MARK: - Hit-Test-Hilfen (für IslandSceneView)
 
-    func islandNodeID(forHitNode node: SCNNode) -> String? {
+    func islandNodeID(forHitNode node: SCNNode) -> Int? {
         var current: SCNNode? = node
         while let n = current {
-            if let name = n.name, islandNodes[name] != nil { return name }
+            if let name = n.name, name.hasPrefix("node"), let id = Int(name.dropFirst(4)), nodeSlots[id] != nil {
+                return id
+            }
             current = n.parent
         }
         return nil
@@ -529,6 +599,8 @@ final class IslandWorld {
         return SCNAction.repeatForever(inner)
     }
 
+    /// Puls aus zwei inkommensurablen Frequenzen — wirkt über eine PoC-Sitzung hinweg unregelmäßig,
+    /// bleibt aber < 2 Hz (Flacker-Sicherheit, siehe `IslandChoreography`).
     static func irregularPulseAction(period: TimeInterval, min: CGFloat, max: CGFloat, apply: @escaping (CGFloat) -> Void) -> SCNAction {
         let outer = period * 9
         let inner = SCNAction.customAction(duration: outer) { _, elapsed in
@@ -547,25 +619,64 @@ final class IslandWorld {
         }
         return SCNAction.repeatForever(inner)
     }
+
+    enum ScaleEase { case linear, easeOut, easeInEaseOut }
+
+    /// SceneKit hat keine eingebaute "scale(to: x:y:z:)"-Aktion für nicht-uniforme Zielskalierung —
+    /// diese Hilfsfunktion interpoliert `node.scale` manuell (eigene Ease-Kurve statt `timingMode`,
+    /// das bei `customAction` nicht greift) über `duration`. Startwert wird beim ersten Tick erfasst.
+    static func nonUniformScaleAction(to target: SCNVector3, duration: TimeInterval, ease: ScaleEase = .linear) -> SCNAction {
+        final class StartBox { var value: SCNVector3? }
+        let box = StartBox()
+        return SCNAction.customAction(duration: duration) { node, elapsed in
+            if box.value == nil { box.value = node.scale }
+            guard let start = box.value else { return }
+            let rawT = duration > 0 ? min(max(Double(elapsed) / duration, 0), 1) : 1
+            let t: Double
+            switch ease {
+            case .linear: t = rawT
+            case .easeOut: t = 1 - pow(1 - rawT, 3)
+            case .easeInEaseOut: t = rawT < 0.5 ? 4 * rawT * rawT * rawT : 1 - pow(-2 * rawT + 2, 3) / 2
+            }
+            node.scale = SCNVector3(
+                start.x + (target.x - start.x) * Float(t),
+                start.y + (target.y - start.y) * Float(t),
+                start.z + (target.z - start.z) * Float(t)
+            )
+        }
+    }
 }
 
 // MARK: - Farbpalette (poc-spec.md §2)
 
+/// Werte 1:1 aus docs/design/art-direction.md — "ein kleines warmes Licht in einer großen,
+/// dunklen, kalten Welt". Nicht nach Gefühl ändern, sondern gegen die Prüfliste am Ende der Datei.
 enum Palette {
-    static let waterDeep = UIColor(levmiHex: "#04040E")
-    static let fogNear = UIColor(levmiHex: "#0B0E22")
-    static let fogHorizon = UIColor(levmiHex: "#1A2447")
+    // Himmel/Hintergrund-Verlauf (kein Blau über ~0.15 Luminanz)
+    static let skyBottom = UIColor(levmiHex: "#04040E")
+    static let skyHorizon = UIColor(levmiHex: "#0B0E22")
+    static let skyTop = UIColor(levmiHex: "#050510")
+    static let waterDeep = skyBottom // Rückwärtskompatibel; Hintergrund selbst ist jetzt ein Verlauf.
+
+    static let fogColor = UIColor(levmiHex: "#0A0D1F")
+    static let fogDawn = UIColor(levmiHex: "#2B2340")
+
     static let lightWarmDefault = UIColor(levmiHex: "#FFB347")
     static let rootsGold = UIColor(levmiHex: "#FFD37A")
-    static let rootsWeak = UIColor(white: 0.55, alpha: 1)
+    static let rootsWeak = UIColor(white: 0.4, alpha: 1)
     static let crystalCyan = UIColor(levmiHex: "#7FE7FF")
-    static let sunWarm = UIColor(levmiHex: "#FFE3A6")
-    static let islandRock = UIColor(red: 0.05, green: 0.055, blue: 0.08, alpha: 1)
-    /// Gemeinsame warme Familie für `glowing` UND `lukewarm` — bis zur Setzung ununterscheidbar.
-    static let nodeWarmFamily = UIColor(levmiHex: "#FFC46B")
+    static let sunRising = UIColor(levmiHex: "#FF9A5C")
+    static let sunRisen = UIColor(levmiHex: "#FFE0B0")
+    static let islandRock = UIColor(levmiHex: "#14162A")
+    static let waterSurface = UIColor(levmiHex: "#05060F")
+
+    /// Gemeinsame warme Familie für `glowing` UND `lukewarm` — bis zur Setzung ununterscheidbar
+    /// (die Hex-Werte unterscheiden sich nur in der zweiten Nachkommastelle der Sättigung).
+    static let nodeGlowing = UIColor(levmiHex: "#FFB347")
+    static let nodeLukewarm = UIColor(levmiHex: "#FFC27A")
     static let nodeWarmShimmer = UIColor(levmiHex: "#FFA9D6")
-    static let nodeCold = UIColor(red: 0.4, green: 0.46, blue: 0.56, alpha: 1)
-    static let spentGray = UIColor(white: 0.4, alpha: 1)
+    static let nodeCold = UIColor(levmiHex: "#2A2F45")
+    static let spentGray = UIColor(white: 0.35, alpha: 1)
 
     static func lerp(_ a: UIColor, _ b: UIColor, _ t: CGFloat) -> UIColor {
         var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0, aa: CGFloat = 0
@@ -640,8 +751,21 @@ enum IslandGeometry {
         }
     }
 
-    /// Kleine Sanduhr (zwei Spitze-an-Spitze-Kegel) — wird ausschließlich von `drainLight()`
-    /// dynamisch erzeugt, NIE vorab am lauwarmen Knoten platziert.
+    /// Vertikaler 3-Stopp-Verlauf für den Szenenhintergrund (art-direction.md: kein harter Bruch
+    /// zwischen Himmel und Nebel). `top` erscheint oben im Bild, `bottom` unten.
+    static func verticalGradient(top: UIColor, middle: UIColor, bottom: UIColor, size: CGSize) -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            let colors = [top.cgColor, middle.cgColor, bottom.cgColor] as CFArray
+            let space = CGColorSpaceCreateDeviceRGB()
+            guard let grad = CGGradient(colorsSpace: space, colors: colors, locations: [0, 0.62, 1]) else { return }
+            ctx.cgContext.drawLinearGradient(grad, start: CGPoint(x: size.width / 2, y: 0), end: CGPoint(x: size.width / 2, y: size.height), options: [])
+        }
+    }
+
+    /// Kleine Sanduhr (zwei Spitze-an-Spitze-Kegel) — wird ausschließlich von `drainLight(nodeID:)`
+    /// dynamisch erzeugt (oder von `restore` für einen bereits gedrainten Knoten), NIE vorab am
+    /// lauwarmen Knoten platziert.
     static func hourglassNode(color: UIColor) -> SCNNode {
         let material = SCNMaterial()
         material.lightingModel = .constant
@@ -661,6 +785,7 @@ enum IslandGeometry {
         bottomNode.position = SCNVector3(0, -0.035, 0)
 
         let group = SCNNode()
+        group.name = "hourglass"
         group.addChildNode(topNode)
         group.addChildNode(bottomNode)
         return group

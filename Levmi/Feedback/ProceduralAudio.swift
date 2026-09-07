@@ -129,7 +129,11 @@ final class ProceduralAudio: @unchecked Sendable {
             // läuft trotzdem, es respektiert nur ggf. den Stummschalter nicht.
         }
         let format = AVAudioFormat(standardFormatWithSampleRate: Self.sampleRate, channels: 2)
-        let sourceNode = AVAudioSourceNode(format: format!) { [state] _, _, frameCount, audioBufferList in
+        // Starker `self`-Capture (statt `[state]`): `Mutex` lässt sich nicht einzeln in die Closure
+        // verschieben, ohne `self.state` andernorts ungültig zu machen. Der dadurch entstehende
+        // Zyklus (self → engine → sourceNode → Closure → self) ist hier gewollt: `ProceduralAudio`
+        // lebt ohnehin für die App-Laufzeit, wie die Drone selbst.
+        let sourceNode = AVAudioSourceNode(format: format!) { [self] _, _, frameCount, audioBufferList in
             let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
             let dt = 1.0 / Self.sampleRate
             state.withLock { s in
