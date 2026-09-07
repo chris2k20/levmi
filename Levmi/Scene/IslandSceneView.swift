@@ -106,6 +106,9 @@ struct IslandSceneView: UIViewRepresentable {
         private var mode: DragMode = .none
         private var lastLocation: CGPoint = .zero
         private var chargeStartedAt: Date?
+        /// Nutzertest Ben/Nadine: Ein ruhig aufliegender Finger erzeugt keine `.changed`-Events —
+        /// der Ladefortschritt muss von einem Timer getrieben werden, nicht von Bewegung.
+        private var chargeTimer: Timer?
         private var sunDragProgress: Double = 0
         /// Für die Tap-vs-Drag-Unterscheidung auf der Sonne (siehe `ended()`): jede Geste setzt
         /// diese in `began()`, unabhängig vom erkannten `mode`.
@@ -181,6 +184,12 @@ struct IslandSceneView: UIViewRepresentable {
                 chargeStartedAt = Date()
                 handlers.onNodeHoldBegan(id)
                 world.chargeNode(kind: id, progress: 0.02) // sofort sichtbar bei Berührung
+                chargeTimer?.invalidate()
+                chargeTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+                    guard let self, case .node(let activeID) = self.mode, let start = self.chargeStartedAt else { return }
+                    let progress = min(1, Date().timeIntervalSince(start) / 1.1)
+                    self.world.chargeNode(kind: activeID, progress: progress)
+                }
             } else {
                 mode = .orbit
                 world.orbitRig.isPaused = true
@@ -219,6 +228,8 @@ struct IslandSceneView: UIViewRepresentable {
             defer {
                 mode = .none
                 chargeStartedAt = nil
+                chargeTimer?.invalidate()
+                chargeTimer = nil
             }
             switch mode {
             case .orbit:
