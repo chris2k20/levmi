@@ -57,6 +57,7 @@ struct GameView: View {
 
             if showDayBadge {
                 DayBadge()
+                    .padding(.top, 64) // unter der Debug-Leiste, nicht dahinter
                     .accessibilitySortPriority(4)
             }
 
@@ -93,13 +94,14 @@ struct GameView: View {
             guard newValue.count > oldValue.count, newValue.last == .lukewarm else { return }
             Task { await flashText2() }
         }
-        .onChange(of: appModel.state.days) { oldValue, newValue in
-            guard oldValue == 0, newValue == 1 else { return }
-            showDayBadge = true
-        }
-        .onChange(of: appModel.state.phase) { _, newValue in
+        .onChange(of: appModel.state.phase) { oldValue, newValue in
             abortedHoldCount = 0
             if newValue == .nodes { Task { await flashText1() } }
+            // „+1 Tag" erscheint erst NACH dem zweiten Durchbruch (Spec 1.3), nicht schon beim
+            // Annehmen des Beweises — sonst nimmt die Zahl dem Morgengrauen die Pointe.
+            if newValue == .cost, oldValue == .breakthroughProof, appModel.state.days > 0 {
+                showDayBadge = true
+            }
         }
     }
 

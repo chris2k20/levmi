@@ -45,7 +45,7 @@ struct TextEntryCard: View {
                 Group {
                     if isMultiline {
                         TextEditor(text: $text)
-                            .frame(minHeight: 110)
+                            .frame(minHeight: 96, maxHeight: 150)
                             .scrollContentBackground(.hidden)
                     } else {
                         TextField(placeholder, text: $text, axis: .vertical)
