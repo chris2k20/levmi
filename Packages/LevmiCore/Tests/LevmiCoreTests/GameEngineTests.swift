@@ -515,7 +515,7 @@ struct GameEngineTests {
         state.phase = .dawnProof
         state.days = 1
         let (next, effects) = reduce(state, .sunPulled(1.0))
-        #expect(next.phase == .cost)
+        #expect(next.phase == .breakthroughProof)
         #expect(next.sunProgress == 1.0)
         let erwartet: [Effect] = [
             .scene(.dawn), .scene(.breakthrough(.second)), .scene(.fogLevel(1)),
@@ -534,6 +534,16 @@ struct GameEngineTests {
         #expect(next.phase == .dawnProof)
         #expect(next.sunProgress == 0.6)
         #expect(effects == [.scene(.sunProgress(0.6))])
+    }
+
+    @Test("Regel 16b: erst breakthroughFinished öffnet die Kosten-Frage")
+    func regel16b_breakthroughFinishedNachZweitemDurchbruch() {
+        var state = beweisbereit()
+        state.phase = .breakthroughProof
+        state.days = 1
+        let (next, effects) = reduce(state, .breakthroughFinished)
+        #expect(next.phase == .cost)
+        #expect(effects == [.persist])
     }
 
     // MARK: - Regel 17
@@ -701,8 +711,18 @@ struct GameEngineTests {
         #expect(effects.isEmpty)
 
         // Kontrolle: appOpened ist in dieser Phase definiert.
+        // Dafür muss die Uhr weiterlaufen: `wartend()` setzt `lastOpenedAt` auf
+        // `clock.now`, und `appOpened` vor `readyAt` ändert laut Regel 0/14 genau
+        // dieses eine Feld. Bei stehender Uhr wäre der Zustand also identisch,
+        // obwohl die Aktion sehr wohl definiert ist — die Kontrollzeile hätte den
+        // Unterschied zu Regel 21 nicht gemessen, sondern die Auflösung der Uhr.
+        // Eine Minute später liegt `readyAt` (+5 Min) weiter in der Zukunft, die
+        // Wartephase bleibt also erhalten.
+        clock.advance(by: T.minute)
         let (geoeffnet, effekte) = reduce(state, .appOpened)
         #expect(geoeffnet != state)
+        #expect(geoeffnet.phase == .waiting)
+        #expect(geoeffnet.lastOpenedAt == clock.now)
         #expect(effekte.isEmpty == false)
     }
 
@@ -829,11 +849,13 @@ struct GameEngineTests {
         #expect(state.progress["schnitt"]?.stage == .applied)
         #expect(effects == [.scene(.presentSun), .persist])
 
-        // Zweiter Durchbruch
+        // Zweiter Durchbruch — erst die Animation, dann breakthroughFinished, dann die Kosten-Frage
         (state, effects) = reduce(state, .sunPulled(1.0), rules: rules)
-        #expect(state.phase == .cost)
+        #expect(state.phase == .breakthroughProof)
         #expect(effects.breakthroughTier == .second)
         #expect(effects.contains(.scene(.fogLevel(1))))
+        (state, effects) = reduce(state, .breakthroughFinished, rules: rules)
+        #expect(state.phase == .cost)
 
         // Kosten und der Satz über dich
         (state, effects) = reduce(state, .costEntered("Zwei Minuten Mut und eine unangenehme Nachricht"), rules: rules)
@@ -914,6 +936,8 @@ struct GameEngineTests {
         #expect(state.days == 1)
 
         (state, _) = reduce(state, .sunPulled(1.0), rules: rules)
+        #expect(state.phase == .breakthroughProof)
+        (state, _) = reduce(state, .breakthroughFinished, rules: rules)
         #expect(state.phase == .cost)
 
         (state, effects) = reduce(state, .costEntered("Zwei Minuten Mut"), rules: rules)

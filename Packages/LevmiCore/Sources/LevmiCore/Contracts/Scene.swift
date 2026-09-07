@@ -74,12 +74,24 @@ public enum SceneProjection {
             roots: roots,
             lightVisible: (state.phase == .firstLight || state.phase == .nodes) && state.lightsRemaining > 0,
             sunProgress: state.sunProgress,
-            sunVisible: state.phase == .roots || state.phase == .dawnProof,
+            sunVisible: [.roots, .breakthrough, .dawnProof, .breakthroughProof].contains(state.phase),
             fogLevel: state.days > 0 ? 1 : 0,
             lightTile: state.lightColorTile,
             rootWindow: state.phase == .waiting,
-            breakthroughTier: nil
+            breakthroughTier: breakthroughTier(for: state, strongRoots: roots.filter { $0 == .strong }.count)
         )
+    }
+
+    /// Review-Befund 3: Nach App-Kill in einer Durchbruch-Phase muss der Renderer den Trieb zeigen können.
+    static func breakthroughTier(for state: PlayerState, strongRoots: Int) -> BreakthroughTier? {
+        switch state.phase {
+        case .breakthrough:
+            return strongRoots >= 2 ? .full : (strongRoots == 1 ? .half : .thin)
+        case .breakthroughProof:
+            return .second
+        default:
+            return nil
+        }
     }
 }
 

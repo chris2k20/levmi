@@ -64,7 +64,7 @@ public enum PainTile: String, Codable, CaseIterable, Sendable {
 public enum GamePhase: String, Codable, Sendable, CaseIterable {
     case firstLight, nodes, roots, breakthrough
     case onboardingPain, onboardingWhy, intention, closed
-    case waiting, proof, dawnProof, cost, befund, idle
+    case waiting, proof, dawnProof, breakthroughProof, cost, befund, idle
 }
 
 public struct Rules: Sendable {
@@ -347,6 +347,9 @@ public enum GameEngine {
 
         case (.dawnProof, .sunPulled(let pulled)):
             return reduceSunPulledDawnProof(state, pulled)
+
+        case (.breakthroughProof, .breakthroughFinished):
+            return reduceBreakthroughFinishedProof(state)
 
         case (.cost, .costEntered(let text)):
             return reduceCostEntered(state, text, clock: clock)

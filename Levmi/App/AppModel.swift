@@ -90,9 +90,23 @@ final class AppModel {
 
     func send(_ action: GameAction) {
         let (newState, effects) = GameEngine.reduce(state, action, clock: clock, world: world, rules: rules)
+        let changed = newState != state
         state = newState
         for effect in effects {
             perform(effect)
+        }
+        // Review-Befund: Regeln 4–6 liefern kein `.persist`; nach App-Kill mitten in `nodes`
+        // gingen Setzungen verloren. Deshalb wird jeder Zustandswechsel sofort gesichert.
+        if changed, !effects.contains(.persist) {
+            try? store.save(state)
+        }
+        // Review-Befund 3: Wiederherstellung mitten in einer Durchbruch-Animation (App-Kill).
+        // Der Renderer zeigt den Trieb statisch (Snapshot-Tier); das Tor öffnet sich nach kurzer Pause.
+        if case .appOpened = action, state.phase == .breakthrough || state.phase == .breakthroughProof {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.8))
+                send(.breakthroughFinished)
+            }
         }
     }
 

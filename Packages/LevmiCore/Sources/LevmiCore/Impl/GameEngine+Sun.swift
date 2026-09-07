@@ -47,7 +47,8 @@ extension GameEngine {
         var (next, effects) = advanceSun(state, pulled)
 
         if next.sunProgress >= 1 {
-            next.phase = .cost
+            // Regel 16 (v3.1): erst die Animation; `breakthroughFinished` öffnet die Kosten-Frage.
+            next.phase = .breakthroughProof
             effects += [
                 .scene(.dawn),
                 .scene(.breakthrough(.second)),
@@ -59,5 +60,12 @@ extension GameEngine {
         }
 
         return (next, effects)
+    }
+
+    /// Regel 16b: `breakthroughFinished` in `breakthroughProof` → Kosten-Frage.
+    static func reduceBreakthroughFinishedProof(_ state: PlayerState) -> (PlayerState, [Effect]) {
+        var next = state
+        next.phase = .cost
+        return (next, [.persist])
     }
 }
