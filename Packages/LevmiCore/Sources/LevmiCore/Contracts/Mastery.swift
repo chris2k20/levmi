@@ -48,7 +48,37 @@ public struct PrincipleProgress: Codable, Sendable, Equatable {
 public enum CopyCheck {
 
     public static func sharesRun(_ text: String, with sources: [String], minWords: Int = 7) -> Bool {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
+        let textWords = words(in: text)
+        guard !textWords.isEmpty else { return false }
+        for source in sources {
+            let sourceWords = words(in: source)
+            if longestCommonRun(textWords, sourceWords) >= minWords {
+                return true
+            }
+        }
         return false
+    }
+
+    /// Kleingeschrieben, Satzzeichen entfernt — Umlaute und Ziffern bleiben Wortbestandteil.
+    private static func words(in text: String) -> [String] {
+        text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+    }
+
+    /// Länge der längsten zusammenhängenden Wortfolge, die `a` und `b` teilen.
+    private static func longestCommonRun(_ a: [String], _ b: [String]) -> Int {
+        guard !a.isEmpty, !b.isEmpty else { return 0 }
+        var previous = [Int](repeating: 0, count: b.count + 1)
+        var longest = 0
+        for i in 1...a.count {
+            var current = [Int](repeating: 0, count: b.count + 1)
+            for j in 1...b.count where a[i - 1] == b[j - 1] {
+                current[j] = previous[j - 1] + 1
+                longest = max(longest, current[j])
+            }
+            previous = current
+        }
+        return longest
     }
 }

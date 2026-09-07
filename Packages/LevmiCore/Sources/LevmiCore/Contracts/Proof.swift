@@ -36,15 +36,29 @@ public struct Intention: Codable, Sendable, Equatable, Identifiable {
         rules: Rules,
         calendar: Calendar = .current
     ) -> Intention {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
+        let earliestProofAt = Self.earliestProofAt(now: now, rules: rules, calendar: calendar)
+        let dueBy = earliestProofAt.addingTimeInterval(rules.proofWindow)
         return Intention(
-            id: "",
+            id: UUID().uuidString,
             principleID: principleID,
             text: text,
             createdAt: now,
-            earliestProofAt: Date(timeIntervalSince1970: 0),
-            dueBy: Date(timeIntervalSince1970: 0)
+            earliestProofAt: earliestProofAt,
+            dueBy: dueBy
         )
+    }
+
+    private static func earliestProofAt(now: Date, rules: Rules, calendar: Calendar) -> Date {
+        let hour = calendar.component(.hour, from: now)
+        guard hour >= 20, rules.appliedLock >= 600 else {
+            return now.addingTimeInterval(rules.appliedLock)
+        }
+        let nextDay = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        var sixAM = calendar.dateComponents([.year, .month, .day], from: nextDay)
+        sixAM.hour = 6
+        sixAM.minute = 0
+        sixAM.second = 0
+        return calendar.date(from: sixAM) ?? now.addingTimeInterval(rules.appliedLock)
     }
 }
 
@@ -72,8 +86,15 @@ public enum ProofVerdict: Equatable, Sendable {
 public enum ProofValidator {
 
     public static func validate(_ text: String, rules: Rules, drillInstruction: String) -> ProofVerdict {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return .tooShort(min: 0)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .empty }
+        if CopyCheck.sharesRun(trimmed, with: [drillInstruction]) {
+            return .copied
+        }
+        guard trimmed.count >= rules.minProofChars else {
+            return .tooShort(min: rules.minProofChars)
+        }
+        return .accepted
     }
 }
 
@@ -81,8 +102,19 @@ public enum ProofValidator {
 public struct DayLedger {
 
     public static func days(after proofs: [Proof], window: TimeInterval) -> Int {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return -1
+        let byPrinciple = Dictionary(grouping: proofs, by: \.principleID)
+        var total = 0
+        for times in byPrinciple.values.map({ $0.map(\.submittedAt).sorted() }) {
+            var lastCounted: Date?
+            for time in times {
+                if let last = lastCounted, time.timeIntervalSince(last) < window {
+                    continue
+                }
+                total += 1
+                lastCounted = time
+            }
+        }
+        return total
     }
 }
 
@@ -114,7 +146,9 @@ public enum ReplayScheduler {
         minAge: TimeInterval,
         lastShownID: String?
     ) -> OwnSentence? {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return OwnSentence(id: "", text: "", createdAt: Date(timeIntervalSince1970: 0), context: .why)
+        let eligible = sentences
+            .filter { now.timeIntervalSince($0.createdAt) >= minAge }
+            .sorted { $0.createdAt < $1.createdAt }
+        return eligible.first { $0.id != lastShownID } ?? eligible.first
     }
 }

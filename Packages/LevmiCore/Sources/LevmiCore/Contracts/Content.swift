@@ -149,25 +149,39 @@ public struct Fallacy: Codable, Identifiable, Hashable, Sendable {
 
 public enum ContentLoader {
 
+    enum LoadError: Error, CustomStringConvertible {
+        case resourceNotFound(String)
+
+        var description: String {
+            switch self {
+            case .resourceNotFound(let path):
+                return "Ressource nicht im Bundle gefunden: \(path)"
+            }
+        }
+    }
+
     /// Dekodiert eine Welt aus rohen JSON-Daten. Wirft bei ungültigem JSON.
     public static func loadWorld(from data: Data) throws -> World {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return World(id: "", title: "", principles: [])
+        try JSONDecoder().decode(World.self, from: data)
     }
 
     /// Lädt `Resources/worlds/<id>.json` aus `Bundle.module`.
     /// Im gebauten Bundle liegt die Datei unter
     /// `Bundle.module.url(forResource: id, withExtension: "json", subdirectory: "Resources/worlds")`.
     public static func bundledWorld(_ id: String) throws -> World {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return World(id: "", title: "", principles: [])
+        guard let url = Bundle.module.url(forResource: id, withExtension: "json", subdirectory: "Resources/worlds") else {
+            throw LoadError.resourceNotFound("Resources/worlds/\(id).json")
+        }
+        return try loadWorld(from: Data(contentsOf: url))
     }
 
     /// Lädt `Resources/fallacies.json` aus `Bundle.module`
     /// (`subdirectory: "Resources"`, Wurzelelement ist ein JSON-Array).
     public static func bundledFallacies() throws -> [Fallacy] {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return []
+        guard let url = Bundle.module.url(forResource: "fallacies", withExtension: "json", subdirectory: "Resources") else {
+            throw LoadError.resourceNotFound("Resources/fallacies.json")
+        }
+        return try JSONDecoder().decode([Fallacy].self, from: Data(contentsOf: url))
     }
 }
 
@@ -232,7 +246,153 @@ public enum ContentValidator {
 
     /// Prüft eine Welt gegen die Regeln 1–8. Leeres Ergebnis = sauber.
     public static func validate(_ world: World, blocklist: [String] = Blocklist.default) -> [ContentIssue] {
-        // STUB — Implementierung durch Sonnet gegen LevmiCoreTests
-        return [ContentIssue(principleID: nil, rule: ContentRule.notImplemented, message: "STUB")]
+        var issues: [ContentIssue] = []
+        let knownIDs = Set(world.principles.map(\.id))
+
+        for principle in world.principles {
+            issues.append(contentsOf: validate(principle, knownIDs: knownIDs, blocklist: blocklist))
+        }
+        if hasPrerequisiteCycle(world.principles) {
+            issues.append(ContentIssue(
+                principleID: nil,
+                rule: ContentRule.prerequisiteCycle,
+                message: "Der Voraussetzungs-Graph enthält einen Zyklus."
+            ))
+        }
+        if !easyStart(world.principles) {
+            issues.append(ContentIssue(
+                principleID: nil,
+                rule: ContentRule.worldEasyStart,
+                message: "Welt „\(world.id)“ hat auf Position 1–2 kein Prinzip mit difficulty == 1."
+            ))
+        }
+        return issues
+    }
+
+    // MARK: - Regeln 1, 2, 3, 5, 6, 8 (pro Prinzip)
+
+    private static func validate(_ principle: Principle, knownIDs: Set<PrincipleID>, blocklist: [String]) -> [ContentIssue] {
+        var issues: [ContentIssue] = []
+        func issue(_ rule: String, _ message: String) {
+            issues.append(ContentIssue(principleID: principle.id, rule: rule, message: message))
+        }
+
+        // Regel 1
+        if principle.core.count > 140 {
+            issue(ContentRule.coreLength, "core hat \(principle.core.count) Zeichen, mehr als 140.")
+        }
+        if principle.core.contains(";") {
+            issue(ContentRule.coreSingleSentence, "core enthält ein Semikolon und ist kein einzelner Satz.")
+        }
+
+        // Regel 8 (Anzahl) und Regel 2 (pro Frage)
+        if principle.recognition.count < 3 {
+            issue(ContentRule.recognitionCount, "Nur \(principle.recognition.count) Erkennungsfragen, mindestens 3 nötig.")
+        }
+        for question in principle.recognition {
+            if question.options.count != 3 {
+                issue(ContentRule.optionCount, "Frage „\(question.id)“ hat \(question.options.count) statt 3 Optionen.")
+            }
+            let correct = question.options.filter(\.isCorrect).count
+            if correct != 1 {
+                issue(ContentRule.correctOptionCount, "Frage „\(question.id)“ hat \(correct) korrekte Optionen statt 1.")
+            }
+            for option in question.options where !option.isCorrect && (option.fallacyID ?? "").isEmpty {
+                issue(ContentRule.fallacyIDMissing, "Falsche Option „\(option.id)“ in „\(question.id)“ nennt keine fallacyID.")
+            }
+        }
+
+        // Regel 3
+        if principle.drill.durationMinutes > 10 {
+            issue(ContentRule.drillDuration, "Drill dauert \(principle.drill.durationMinutes) Minuten, mehr als 10.")
+        }
+
+        // Regel 4a (unbekannte Voraussetzung; der Zyklus wird global geprüft)
+        for prerequisite in principle.prerequisites where !knownIDs.contains(prerequisite) {
+            issue(ContentRule.prerequisiteUnknown, "Voraussetzung „\(prerequisite)“ ist kein bekanntes Prinzip.")
+        }
+
+        // Regel 5
+        if principle.attribution.originName.isEmpty {
+            issue(ContentRule.attributionMissing, "attribution.originName fehlt.")
+        }
+        if principle.attribution.originKind == .gemeingut && principle.attribution.note.isEmpty {
+            issue(ContentRule.attributionNote, "originKind == .gemeingut verlangt eine Notiz.")
+        }
+
+        // Regel 6 (IP-Gate)
+        let texts = blocklistTexts(of: principle)
+        for term in blocklist where !term.isEmpty {
+            if texts.contains(where: { $0.range(of: term, options: .caseInsensitive) != nil }) {
+                issue(ContentRule.blocklist, "Sperrbegriff „\(term)“ im Content gefunden.")
+            }
+        }
+
+        return issues
+    }
+
+    // MARK: - Regel 4b (Zyklus im Voraussetzungs-Graph)
+
+    private static func hasPrerequisiteCycle(_ principles: [Principle]) -> Bool {
+        enum Mark { case visiting, done }
+        var marks: [PrincipleID: Mark] = [:]
+        let byID = Dictionary(uniqueKeysWithValues: principles.map { ($0.id, $0) })
+
+        func visit(_ id: PrincipleID) -> Bool {
+            switch marks[id] {
+            case .visiting: return true
+            case .done: return false
+            case nil: break
+            }
+            marks[id] = .visiting
+            for prerequisite in byID[id]?.prerequisites ?? [] where byID[prerequisite] != nil {
+                if visit(prerequisite) { return true }
+            }
+            marks[id] = .done
+            return false
+        }
+
+        return principles.contains { visit($0.id) }
+    }
+
+    // MARK: - Regel 7 (leichter Einstieg)
+
+    private static func easyStart(_ principles: [Principle]) -> Bool {
+        principles
+            .sorted { $0.orderInWorld < $1.orderInWorld }
+            .prefix(2)
+            .contains { $0.difficulty == 1 }
+    }
+
+    // MARK: - Freitext eines Prinzips, für Regel 6
+
+    private static func blocklistTexts(of principle: Principle) -> [String] {
+        var texts = [
+            principle.title, principle.subtitle, principle.core, principle.expandedCore,
+            principle.metaphor.imageLine, principle.metaphor.primaryObject, principle.metaphor.successState,
+            principle.explainPrompt,
+            principle.drill.title, principle.drill.instruction,
+            principle.selfCheck.question,
+            principle.antiPattern.name, principle.antiPattern.tellTale, principle.antiPattern.counterMove,
+            principle.teachTask.prompt,
+            principle.attribution.originName, principle.attribution.note
+        ]
+        texts.append(contentsOf: principle.selfCheck.passCriteria)
+        texts.append(contentsOf: principle.teachTask.requiredElements)
+        texts.append(contentsOf: principle.tags)
+        texts.append(contentsOf: principle.synergies.map(\.chordName))
+        texts.append(contentsOf: principle.synergies.map(\.effect))
+        if let furtherReading = principle.attribution.furtherReading {
+            texts.append(furtherReading)
+        }
+        for question in principle.recognition {
+            texts.append(question.situation)
+            texts.append(question.prompt)
+            for option in question.options {
+                texts.append(option.text)
+                texts.append(option.feedback)
+            }
+        }
+        return texts
     }
 }
