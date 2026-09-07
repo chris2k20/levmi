@@ -93,9 +93,10 @@ final class IslandWorld {
     let sunNode = SCNNode()
     let sunLight = SCNLight()
     let sunMaterial = SCNMaterial()
-    static let sunHiddenY: Float = -3.2
+    static let sunHiddenY: Float = 3.2   // Scheibe komplett über der Inselkrone sichtbar
+    static let sunX: Float = -1.8        // leicht links neben der Krone
     static let sunRisenY: Float = 9.5
-    static let sunZ: Float = -30
+    static let sunZ: Float = -6    // dicht hinter der Insel: fast nebelfrei, große Scheibe, steigt hinter der Krone auf
     static let keyLightNightColor = UIColor(red: 1, green: 0.86, blue: 0.68, alpha: 1)
 
     // Durchbruch-Trieb
@@ -121,7 +122,7 @@ final class IslandWorld {
     // Dolly-In für die Knoten-Phase (siehe presentNodes/presentSun): die fünf Knoten liegen bei
     // cameraOrbitPosition nur ~15-30 pt auseinander (nicht daumentauglich, ≥ 56 pt gefordert).
     // Näher heran vergrößert ihren Bildschirmabstand, ohne den Insel-Radius unrealistisch aufzublasen.
-    static let cameraNodesPosition = SCNVector3(0, 1.6, 5.5)
+    static let cameraNodesPosition = SCNVector3(0, 1.9, 7.2)
     static let cameraDivePosition = SCNVector3(0, 0.1, 3.0)
     static let cameraBreakthroughPosition = SCNVector3(0, 1.4, 5.0)
     static let cameraLookTarget = SCNVector3(0, 0.6, 0)
@@ -178,8 +179,8 @@ final class IslandWorld {
             top: Palette.skyTop, middle: Palette.skyHorizon, bottom: Palette.skyBottom, size: CGSize(width: 4, height: 512)
         )
         scene.fogColor = Palette.fogColor
-        scene.fogStartDistance = 6
-        scene.fogEndDistance = 22
+        scene.fogStartDistance = 8
+        scene.fogEndDistance = 40
         scene.fogDensityExponent = 1.8
     }
 
@@ -284,11 +285,11 @@ final class IslandWorld {
         // presentNodes/presentSun) liefert den Rest der nötigen Bildschirm-Vergrößerung, ohne den
         // Radius allein bis ins Absurde zu treiben.
         let slots: [(id: Int, angleDeg: Float, radius: Float, height: Float)] = [
-            (0, 18, 0.95, 0.64),
-            (1, 38, 0.65, 0.60),
-            (2, 92, 0.48, 0.68),
-            (3, 133, 0.62, 0.58),
-            (4, 155, 0.95, 0.62),
+            (0, 18, 0.78, 0.64),
+            (1, 38, 0.56, 0.60),
+            (2, 92, 0.42, 0.68),
+            (3, 133, 0.54, 0.58),
+            (4, 155, 0.78, 0.62),
         ]
         for slot in slots {
             let rad = slot.angleDeg * .pi / 180
@@ -436,10 +437,11 @@ final class IslandWorld {
         sunMaterial.lightingModel = .constant
         sunMaterial.diffuse.contents = Palette.sunRising
         sunMaterial.emission.contents = Palette.sunRising
+        sunMaterial.emission.intensity = 1.8
         sphere.materials = [sunMaterial]
         sunNode.geometry = sphere
         sunNode.name = "sun"
-        sunNode.position = SCNVector3(0, Self.sunHiddenY, Self.sunZ)
+        sunNode.position = SCNVector3(Self.sunX, Self.sunHiddenY, Self.sunZ)
 
         sunLight.type = .omni
         sunLight.color = Palette.sunRising
@@ -479,7 +481,7 @@ final class IslandWorld {
         // (#14162A) komplett ohne lesbare Kante verschwinden, daher angehoben auf 130 (siehe
         // sunProgress/dawn/restore — dieselbe Zahl an allen drei Stellen).
         keyLight.type = .directional
-        keyLight.intensity = 130
+        keyLight.intensity = 220
         keyLight.color = Self.keyLightNightColor
         keyLight.castsShadow = true
         keyLight.shadowMode = .deferred

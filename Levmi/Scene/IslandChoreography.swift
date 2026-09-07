@@ -286,6 +286,22 @@ extension IslandWorld {
         let worldPosition = slot.crystalNode.convertPosition(SCNVector3(0, 0, 0), to: nil)
         spawnBurst(impactBurstTemplate, atWorldPosition: worldPosition)
         pulseFieldOfView(delta: 1.4, upDuration: 0.07, downDuration: 0.18)
+
+        // Das Licht ist verbraucht: Es fährt sichtbar in den Knoten und verschwindet. Ohne diesen
+        // Schritt blieb die Kugel über der Insel stehen und sah aus wie eine Sonne (falsche Geste).
+        cancelIdleAffordance()
+        playerLightNode.removeAllActions()
+        playerLightNode.isHidden = false
+        let travel = SCNAction.move(to: worldPosition, duration: 0.22)
+        travel.timingMode = .easeIn
+        let shrink = SCNAction.scale(to: 0.1, duration: 0.22)
+        let fade = SCNAction.fadeOut(duration: 0.22)
+        let hide = SCNAction.run { node in
+            node.isHidden = true
+            node.opacity = 0
+            node.scale = SCNVector3(1, 1, 1)
+        }
+        playerLightNode.runAction(.sequence([.group([travel, shrink, fade]), hide]), forKey: "consume")
     }
 
     /// Nichts wächst, nichts wird verbraucht: Ring fällt zurück, der Knoten bleibt unverändert nutzbar.
@@ -492,7 +508,7 @@ extension IslandWorld {
         sunNode.isHidden = false
         sunNode.opacity = 0
         sunNode.scale = SCNVector3(1, 1, 1)
-        sunNode.position = SCNVector3(0, Self.sunHiddenY, Self.sunZ)
+        sunNode.position = SCNVector3(Self.sunX, Self.sunHiddenY, Self.sunZ)
         sunMaterial.diffuse.contents = Palette.sunRising
         sunMaterial.emission.contents = Palette.sunRising
         sunNode.runAction(.fadeIn(duration: 0.6), forKey: "presentSun")
@@ -552,7 +568,7 @@ extension IslandWorld {
 
         SCNTransaction.begin()
         SCNTransaction.animationDuration = 0.05
-        sunNode.position = SCNVector3(0, y, Self.sunZ)
+        sunNode.position = SCNVector3(Self.sunX * (1 - Float(clamped) * 0.6), y, Self.sunZ)
         sunMaterial.diffuse.contents = sunColor
         sunMaterial.emission.contents = sunColor
         sunLight.color = sunColor
@@ -583,7 +599,7 @@ extension IslandWorld {
         SCNTransaction.begin()
         SCNTransaction.animationDuration = 0.8
         SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        sunNode.position = SCNVector3(0, Self.sunRisenY, Self.sunZ)
+        sunNode.position = SCNVector3(Self.sunX * 0.4, Self.sunRisenY, Self.sunZ)
         sunMaterial.diffuse.contents = Palette.sunRisen
         sunMaterial.emission.contents = Palette.sunRisen
         sunLight.color = Palette.sunRisen
@@ -733,7 +749,7 @@ extension IslandWorld {
         sunNode.scale = SCNVector3(1, 1, 1)
         let sunT = CGFloat(snapshot.sunProgress)
         let sunY = Self.sunHiddenY + (Self.sunRisenY - Self.sunHiddenY) * Float(snapshot.sunProgress)
-        sunNode.position = SCNVector3(0, sunY, Self.sunZ)
+        sunNode.position = SCNVector3(Self.sunX * (1 - Float(snapshot.sunProgress) * 0.6), sunY, Self.sunZ)
         let sunColor = Palette.lerp(Palette.sunRising, Palette.sunRisen, sunT)
         sunMaterial.diffuse.contents = sunColor
         sunMaterial.emission.contents = sunColor
