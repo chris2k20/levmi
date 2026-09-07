@@ -129,7 +129,7 @@ public enum BreakthroughTier: String, Codable, Sendable { case full, half, thin,
 public struct SceneSnapshot: Codable, Sendable, Equatable { islandRevealed: Bool; nodes: [NodeSpec]; litNodeIDs: [Int]; roots: [RootStrength]; lightVisible: Bool; sunProgress: Double; sunVisible: Bool; fogLevel: Int; lightTile: PainTile?; rootWindow: Bool; breakthroughTier: BreakthroughTier? }
 public enum SceneProjection { public static func snapshot(of state: PlayerState) -> SceneSnapshot }   // reine Funktion Zustand → Szene
 public enum PainTile: String, Codable, CaseIterable, Sendable { case zeitWeg, zuVielLauwarmes, keinFortschritt, geldReichtNicht, immerErreichbar, allesHaengtAnMir; public var inverted: String { get } }
-public enum GamePhase: String, Codable, Sendable { case firstLight, nodes, roots, dawn, breakthrough, onboardingPain, onboardingFlip, onboardingWhy, intention, closed, waiting, proof, dawnProof, breakthroughProof, cost, befund, idle }
+public enum GamePhase: String, Codable, Sendable, CaseIterable { case firstLight, nodes, roots, breakthrough, onboardingPain, onboardingWhy, intention, closed, waiting, proof, dawnProof, breakthroughProof, cost, befund, idle }   // 15 Phasen (v3.1)
 public struct Rules: Sendable { appliedLock: TimeInterval; proofWindow: TimeInterval; replayMinAge: TimeInterval; lightsPerNight: Int; minProofChars: Int; minExplanationChars: Int; static let standard: Rules; static let demo: Rules }
 // standard: appliedLock 600 s (10 Min), proofWindow 86_400 s, replayMinAge 86_400 s, lightsPerNight 2, minProofChars 40, minExplanationChars 60
 // demo:     appliedLock 30 s, proofWindow 600 s, replayMinAge 60 s, lightsPerNight 2, minProofChars 40, minExplanationChars 60
@@ -182,7 +182,8 @@ public protocol SaveStore { func load() throws -> PlayerState?; func save(_ stat
 13. `closeForToday` in `closed` → `closedAt = now`, Phase `waiting`, Effekte `[.scene(.rootWindow(visible: true)), .persist]`. **`appOpened` in `closed` wirkt wie `closeForToday`** (zusätzlich zu Regel 0).
 14. `appOpened` in `waiting`: `now < readyAt` → bleibt `waiting`, Effekte enthalten `.scene(.rootWindow(visible: true))`; `now >= readyAt` → Phase `proof`, Effekte enthalten `.scene(.rootWindow(visible: false))`.
 15. `proofSubmitted(text)` in `proof` → `ProofValidator.validate(text, rules:, drillInstruction:)`; bei `.accepted`: `progress["schnitt"].proofs += [Proof]`, Stufe `applied`, `days = DayLedger.days(after:window:)`, `sunProgress = 0`, Phase `dawnProof`, Effekte `[.scene(.presentSun), .persist]`. Sonst `.reject(reason:)`, Phase bleibt.
-16. `sunPulled(p)` in `dawnProof` → wie 8; bei `>= 1`: Phase `cost`, Effekte `[.scene(.dawn), .scene(.breakthrough(.second)), .scene(.fogLevel(1)), .haptic(.breakthrough), .sound(.breakthrough), .persist]`.
+16. `sunPulled(p)` in `dawnProof` → wie 8; bei `>= 1`: Phase `breakthroughProof`, Effekte `[.scene(.dawn), .scene(.breakthrough(.second)), .scene(.fogLevel(1)), .haptic(.breakthrough), .sound(.breakthrough), .persist]`.
+16b. `breakthroughFinished` in `breakthroughProof` → Phase `cost`, Effekt `.persist` (v3.1, Red-Team-Review: kein Overlay über der laufenden Animation).
 17. `costEntered(text)` in `cost` → wenn Text: `ownSentences += [.cost]`; `befund = BefundGenerator.generate(state:now:)`; Phase `befund`, Effekte `[.showBefund(befund), .persist]`.
 18. `befundAnswered(accepted)` in `befund` → bei `true` oder wenn `befundAlternativeShown` bereits `true`: `befundAccepted = accepted`, Phase `idle`, `.persist`. Bei `false` und noch keine Alternative gezeigt: `befundAlternativeShown = true`, Effekt `.showBefund(Befund(sentence: befund.alternative, …))`, Phase bleibt `befund`.
 19. `appOpened` in `idle` → wenn `ReplayScheduler` einen Satz liefert: Effekt `.showOwnSentence(s)`; sonst keine weiteren Effekte.
@@ -192,7 +193,7 @@ public protocol SaveStore { func load() throws -> PlayerState?; func save(_ stat
 
 ### 3.3 Wiederherstellung (Zustand → Szene)
 
-`SceneProjection.snapshot(of:)` ist eine reine Funktion. Der Renderer setzt bei `.restore` die komplette Szene ohne Animation: Insel sichtbar ab Phase ≥ `nodes`; Knoten aus `nodes`, gesetzte aus `litNodeIDs` mit Wurzelstärke aus `placements`; Licht sichtbar in `firstLight`/`nodes` (wenn `lightsRemaining > 0`); Sonne sichtbar in `roots`/`dawnProof` mit `sunProgress`, in `waiting` unter dem Horizont; Wurzelfenster in `waiting`; Nebelstufe = `days > 0 ? 1 : 0`; Lichtfarbe aus `lightColorTile`. Tests: Snapshot pro Phase entlang des Golden Path.
+`SceneProjection.snapshot(of:)` ist eine reine Funktion. Der Renderer setzt bei `.restore` die komplette Szene ohne Animation: Insel sichtbar ab Phase ≥ `nodes`; Knoten aus `nodes`, gesetzte aus `litNodeIDs` mit Wurzelstärke aus `placements`; Licht sichtbar in `firstLight`/`nodes` (wenn `lightsRemaining > 0`); Sonne sichtbar in `roots`/`breakthrough`/`dawnProof`/`breakthroughProof` mit `sunProgress`; in `waiting` leitet der Renderer „Sonne unter dem Horizont" aus `rootWindow == true` ab; Wurzelfenster in `waiting`; Nebelstufe = `days > 0 ? 1 : 0`; Lichtfarbe aus `lightColorTile`; `breakthroughTier` = in `breakthrough` aus der Zahl starker Wurzeln (`.full`/`.half`/`.thin`), in `breakthroughProof` `.second`, sonst nil. Die App löst nach einem Restore in eine Durchbruch-Phase `breakthroughFinished` nach 0,8 s selbst aus. Die App speichert zusätzlich nach jedem Zustandswechsel (nicht nur bei `.persist`). Tests: Snapshot pro Phase entlang des Golden Path.
 
 ## 4. Testplan (Opus schreibt zuerst, Sonnet implementiert)
 
